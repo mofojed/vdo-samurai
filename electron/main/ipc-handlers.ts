@@ -194,6 +194,34 @@ export function registerIpcHandlers(): void {
     return importClip();
   });
 
+  // E2E test helper: import clip directly by path (bypasses file dialog)
+  ipcMain.handle('speeddial:importClipByPath', async (_event, filePath: string) => {
+    try {
+      const info = await getSpeedDialVideoInfo(filePath);
+      if (!info.success || info.duration === undefined) {
+        return { success: false, error: info.error || 'Could not read video info' };
+      }
+      const name =
+        filePath
+          .split('/')
+          .pop()
+          ?.replace(/\.[^.]+$/, '') || 'clip';
+      return {
+        success: true,
+        clip: {
+          path: filePath,
+          name,
+          duration: info.duration
+        }
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Failed to import clip'
+      };
+    }
+  });
+
   ipcMain.handle('speeddial:readClip', async (_event, filePath: string) => {
     return readClip(filePath);
   });

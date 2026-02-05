@@ -120,6 +120,8 @@ export interface SpeedDialVideoInfo {
 
 export interface SpeedDialAPI {
   importClip: () => Promise<SpeedDialImportResult>;
+  // E2E test helper: import clip directly by path (bypasses file dialog)
+  importClipByPath: (filePath: string) => Promise<SpeedDialImportResult>;
   readClip: (filePath: string) => Promise<ArrayBuffer>;
   generateThumbnail: (videoPath: string) => Promise<SpeedDialThumbnailResult>;
   getVideoInfo: (videoPath: string) => Promise<SpeedDialVideoInfo>;

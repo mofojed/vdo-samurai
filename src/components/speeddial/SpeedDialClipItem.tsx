@@ -29,6 +29,7 @@ export function SpeedDialClipItem({
 
   return (
     <div
+      data-testid="speed-dial-clip"
       className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
         isActive ? 'bg-green-500/20 border border-green-500/50' : 'bg-white/5 hover:bg-white/10'
       }`}

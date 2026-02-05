@@ -11,16 +11,23 @@ export function MainDisplay({ children }: MainDisplayProps) {
   const { focusedPeerId, localStream, localScreenStream } = useSessionStore();
   const { peers } = usePeerStore();
 
+  const focusedPeer = peers.find((p) => p.id === focusedPeerId);
+
+  // Debug: log which streams are available
+  const focusedPeerHasStream = focusedPeer?.stream !== null;
+  const focusedPeerHasScreenStream = focusedPeer?.screenStream !== null;
   console.log(
     '[MainDisplay] localStream:',
     !!localStream,
     'localScreenStream:',
     !!localScreenStream,
     'focusedPeerId:',
-    focusedPeerId
+    focusedPeerId,
+    'focusedPeer.stream:',
+    focusedPeerHasStream,
+    'focusedPeer.screenStream:',
+    focusedPeerHasScreenStream
   );
-
-  const focusedPeer = peers.find((p) => p.id === focusedPeerId);
 
   // Determine which stream to show
   let displayStream: MediaStream | null = null;
@@ -36,7 +43,27 @@ export function MainDisplay({ children }: MainDisplayProps) {
     isScreenShare = localScreenStream !== null;
   }
 
-  console.log('[MainDisplay] displayStream:', !!displayStream, 'displayName:', displayName);
+  // Debug: log stream info
+  const displayStreamInfo = displayStream
+    ? {
+        id: displayStream.id,
+        active: displayStream.active,
+        videoTracks: displayStream.getVideoTracks().length,
+        videoEnabled: displayStream.getVideoTracks()[0]?.enabled,
+        videoMuted: displayStream.getVideoTracks()[0]?.muted,
+        videoReadyState: displayStream.getVideoTracks()[0]?.readyState
+      }
+    : null;
+  console.log(
+    '[MainDisplay] displayStream:',
+    !!displayStream,
+    'displayName:',
+    displayName,
+    'isScreenShare:',
+    isScreenShare,
+    'streamInfo:',
+    JSON.stringify(displayStreamInfo)
+  );
 
   return (
     <div

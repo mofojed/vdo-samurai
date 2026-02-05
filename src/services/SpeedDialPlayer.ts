@@ -46,15 +46,25 @@ export class SpeedDialPlayer {
     console.log('[SpeedDialPlayer] Registered clip:', clipId);
 
     // Create video element and add to DOM (required for captureStream to work properly)
+    // IMPORTANT: For WebRTC transmission, the element must be:
+    // 1. Within the viewport (not off-screen) - browsers deprioritize rendering off-screen elements
+    // 2. Have meaningful dimensions (640x360) - tiny elements cause black frames
+    // 3. Actually rendered (not display:none or visibility:hidden)
+    //
+    // Position at bottom-right corner, behind everything with z-index, and nearly invisible.
+    // This ensures the browser allocates proper rendering buffers for WebRTC encoding.
     this.videoElement = document.createElement('video');
     this.videoElement.playsInline = true;
     this.videoElement.crossOrigin = 'anonymous'; // Required for captureStream with localhost
     this.videoElement.muted = false; // We'll control audio via GainNode
     this.videoElement.style.position = 'fixed';
-    this.videoElement.style.top = '-9999px';
-    this.videoElement.style.left = '-9999px';
-    this.videoElement.style.width = '1px';
-    this.videoElement.style.height = '1px';
+    this.videoElement.style.bottom = '0';
+    this.videoElement.style.right = '0';
+    this.videoElement.style.width = '640px';
+    this.videoElement.style.height = '360px';
+    this.videoElement.style.zIndex = '-9999'; // Behind everything
+    this.videoElement.style.opacity = '0.01'; // Nearly invisible but still rendered
+    this.videoElement.style.pointerEvents = 'none';
     document.body.appendChild(this.videoElement);
 
     // Handle end of playback
@@ -113,38 +123,92 @@ export class SpeedDialPlayer {
       error: this.videoElement.error
     });
 
-    // Start playback first - captureStream works better after play starts
-    await this.videoElement.play();
+    // Start playback and wait for the 'playing' event which indicates frames are being rendered
+    await new Promise<void>((resolve, reject) => {
+      const video = this.videoElement!;
+      const timeoutId = setTimeout(() => {
+        video.removeEventListener('playing', onPlaying);
+        video.removeEventListener('error', onError);
+        // Still resolve - video might be playing but event didn't fire
+        console.log('[SpeedDialPlayer] Playing event timeout, proceeding anyway');
+        resolve();
+      }, 2000);
 
-    // Wait for actual frame to be rendered
+      const onPlaying = () => {
+        clearTimeout(timeoutId);
+        video.removeEventListener('playing', onPlaying);
+        video.removeEventListener('error', onError);
+        resolve();
+      };
+
+      const onError = () => {
+        clearTimeout(timeoutId);
+        video.removeEventListener('playing', onPlaying);
+        video.removeEventListener('error', onError);
+        reject(new Error('Video playback error'));
+      };
+
+      video.addEventListener('playing', onPlaying);
+      video.addEventListener('error', onError);
+      video.play().catch(reject);
+    });
+
+    // Wait for actual video frame dimensions to be available
+    // This ensures the decoder has processed at least one frame
     await new Promise<void>((resolve) => {
       const video = this.videoElement!;
+      let attempts = 0;
+      const maxAttempts = 60; // 1 second at ~60fps
+
       const checkFrame = () => {
-        if (video.videoWidth > 0 && video.videoHeight > 0) {
+        attempts++;
+        if (video.videoWidth > 0 && video.videoHeight > 0 && video.currentTime > 0) {
+          console.log('[SpeedDialPlayer] Frame ready after', attempts, 'attempts');
+          resolve();
+        } else if (attempts >= maxAttempts) {
+          console.log('[SpeedDialPlayer] Frame check timeout, proceeding anyway');
           resolve();
         } else {
           requestAnimationFrame(checkFrame);
         }
       };
-      // Also set a timeout fallback
-      setTimeout(resolve, 500);
       checkFrame();
     });
 
+    // Log video element position and rendering state for debugging WebRTC issues
+    const rect = this.videoElement.getBoundingClientRect();
+    const inViewport =
+      rect.top < window.innerHeight &&
+      rect.bottom > 0 &&
+      rect.left < window.innerWidth &&
+      rect.right > 0;
     console.log('[SpeedDialPlayer] Video state after play:', {
       readyState: this.videoElement.readyState,
       videoWidth: this.videoElement.videoWidth,
       videoHeight: this.videoElement.videoHeight,
-      currentTime: this.videoElement.currentTime
+      currentTime: this.videoElement.currentTime,
+      elementPosition: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+      inViewport,
+      windowSize: { width: window.innerWidth, height: window.innerHeight }
     });
 
     // Get video stream using captureStream
     // Note: captureStream() requires user gesture for autoplay policy
     const capturedStream = this.videoElement.captureStream();
 
+    // Log captured video track settings for WebRTC debugging
+    const videoTrack = capturedStream.getVideoTracks()[0];
+    const trackSettings = videoTrack?.getSettings();
     console.log('[SpeedDialPlayer] captureStream tracks:', {
       video: capturedStream.getVideoTracks().length,
-      audio: capturedStream.getAudioTracks().length
+      audio: capturedStream.getAudioTracks().length,
+      videoTrackSettings: trackSettings
+        ? {
+            width: trackSettings.width,
+            height: trackSettings.height,
+            frameRate: trackSettings.frameRate
+          }
+        : 'no video track'
     });
 
     // Set up audio processing for volume control
@@ -163,7 +227,7 @@ export class SpeedDialPlayer {
     this.gainNode.connect(this.audioContext.destination);
 
     // Combine video track from captureStream with audio track from AudioContext
-    const videoTrack = capturedStream.getVideoTracks()[0];
+    // Note: videoTrack was already retrieved above for logging
     const audioTrack = audioDestination.stream.getAudioTracks()[0];
 
     console.log(

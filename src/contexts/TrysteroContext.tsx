@@ -460,6 +460,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
             stateRef.current.peersWithScreenShareAvailable.add(peerId);
           } else {
             stateRef.current.peersWithScreenShareAvailable.delete(peerId);
+            // Clear the peer's screenStream so MainDisplay falls back to camera
+            updatePeer(peerId, { screenStream: null });
+            console.log('[TrysteroProvider] Cleared screenStream for peer:', peerId);
             if (stateRef.current.activeScreenSharePeerId === peerId) {
               stateRef.current.activeScreenSharePeerId = null;
               setActiveScreenSharePeerId(null);
@@ -692,9 +695,75 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
       // Handle incoming streams
       newRoom.onPeerStream((stream, peerId, metadata) => {
-        console.log('[TrysteroProvider] Received stream from peer:', peerId, metadata);
         const meta = metadata as { type?: string } | undefined;
-        const isScreen = meta?.type === 'screen';
+        const metaType = meta?.type;
+        const metaStr = metadata === undefined ? 'undefined' : JSON.stringify(metadata);
+
+        // Get stream info for debugging
+        const videoTracks = stream.getVideoTracks();
+        const audioTracks = stream.getAudioTracks();
+        const streamInfo = {
+          id: stream.id,
+          active: stream.active,
+          videoTracks: videoTracks.length,
+          audioTracks: audioTracks.length,
+          videoTrackEnabled: videoTracks[0]?.enabled,
+          videoTrackMuted: videoTracks[0]?.muted,
+          videoTrackReadyState: videoTracks[0]?.readyState
+        };
+
+        console.log('[TrysteroProvider] Received stream from peer:', peerId, 'metadata:', metaStr);
+        console.log('[TrysteroProvider] Stream info:', JSON.stringify(streamInfo));
+
+        // Ignore dead/inactive streams with no video tracks
+        // These are sent by Trystero when a stream is removed
+        if (!stream.active || videoTracks.length === 0) {
+          console.log(
+            '[TrysteroProvider] Ignoring dead/inactive stream (no video tracks or inactive)'
+          );
+          return;
+        }
+
+        // Check metadata first - if explicit type is provided, trust it
+        const hasExplicitType = metaType !== undefined;
+        const isScreenFromMetadata = metaType === 'screen';
+        const isCameraFromMetadata = metaType === 'camera';
+
+        // Fallback: if NO metadata type is provided, use screen share status as a signal.
+        // Trystero sometimes doesn't preserve metadata for dynamically added streams.
+        const peerHasScreenShareAnnounced =
+          stateRef.current.peersWithScreenShareAvailable.has(peerId);
+        const currentPeer = usePeerStore.getState().peers.find((p) => p.id === peerId);
+        const peerAlreadyHasCameraStream = currentPeer?.stream !== null;
+
+        // Determine if this is a screen stream:
+        // 1. Explicit metadata says it's a screen -> screenStream
+        // 2. Explicit metadata says it's a camera -> stream (camera)
+        // 3. NO metadata AND peer has announced screen share AND peer already has camera
+        //    -> assume this new stream is the screen share
+        // 4. Otherwise -> stream (camera)
+        let isScreen: boolean;
+        if (hasExplicitType) {
+          // Trust explicit metadata
+          isScreen = isScreenFromMetadata;
+        } else {
+          // No metadata - use fallback logic
+          isScreen = peerHasScreenShareAnnounced && peerAlreadyHasCameraStream;
+        }
+
+        console.log(
+          '[TrysteroProvider] Stream classification:',
+          JSON.stringify({
+            hasExplicitType,
+            metaType,
+            isScreenFromMetadata,
+            isCameraFromMetadata,
+            peerHasScreenShareAnnounced,
+            peerAlreadyHasCameraStream,
+            isScreen,
+            storingAs: isScreen ? 'screenStream' : 'stream'
+          })
+        );
 
         if (isScreen) {
           updatePeer(peerId, { screenStream: stream });
@@ -707,19 +776,19 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const existingPeers = newRoom.getPeers();
       console.log('[TrysteroProvider] Existing peers in room:', existingPeers);
 
-      // Periodic debug logging (temporary - will be removed)
-      if (debugIntervalRef.current) {
-        clearInterval(debugIntervalRef.current);
-      }
-      debugIntervalRef.current = setInterval(() => {
-        const peers = newRoom.getPeers();
-        console.log('[TrysteroProvider] DEBUG - Peers check:', {
-          peerCount: Object.keys(peers).length,
-          peers: Object.keys(peers),
-          selfId
-        });
-        logRelayStatus();
-      }, 10000);
+      // Periodic debug logging disabled - uncomment if needed for debugging connection issues
+      // if (debugIntervalRef.current) {
+      //   clearInterval(debugIntervalRef.current);
+      // }
+      // debugIntervalRef.current = setInterval(() => {
+      //   const peers = newRoom.getPeers();
+      //   console.log('[TrysteroProvider] DEBUG - Peers check:', {
+      //     peerCount: Object.keys(peers).length,
+      //     peers: Object.keys(peers),
+      //     selfId
+      //   });
+      //   logRelayStatus();
+      // }, 10000);
     },
     [addPeer, updatePeer, removePeer, setActiveScreenSharePeerId, setFocusedPeerId, clearJoinErrors]
   );

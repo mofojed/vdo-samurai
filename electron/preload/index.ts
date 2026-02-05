@@ -223,6 +223,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   speedDial: {
     importClip: (): Promise<SpeedDialImportResult> => ipcRenderer.invoke('speeddial:importClip'),
 
+    // E2E test helper: import clip directly by path (bypasses file dialog)
+    importClipByPath: (filePath: string): Promise<SpeedDialImportResult> =>
+      ipcRenderer.invoke('speeddial:importClipByPath', filePath),
+
     readClip: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('speeddial:readClip', filePath),
 

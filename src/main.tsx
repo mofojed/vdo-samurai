@@ -11,6 +11,7 @@ import { useRecordingStore } from './store/recordingStore';
 import { usePeerStore } from './store/peerStore';
 import { useTransferStore } from './store/transferStore';
 import { useUserStore } from './store/userStore';
+import { useSpeedDialStore } from './store/speedDialStore';
 
 // Expose on window for testing scripts to access
 (window as Record<string, unknown>).useSessionStore = useSessionStore;
@@ -18,6 +19,7 @@ import { useUserStore } from './store/userStore';
 (window as Record<string, unknown>).usePeerStore = usePeerStore;
 (window as Record<string, unknown>).useTransferStore = useTransferStore;
 (window as Record<string, unknown>).useUserStore = useUserStore;
+(window as Record<string, unknown>).useSpeedDialStore = useSpeedDialStore;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
