@@ -146,7 +146,7 @@ function launchElectronHost() {
 
   const electronProcess = spawn(
     ELECTRON_PATH,
-    [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
+    [MAIN_ENTRY, `--user-data-dir=${userDataDir}`, '--remote-debugging-port=9222'],
     {
       cwd: projectRoot,
       stdio: 'inherit',

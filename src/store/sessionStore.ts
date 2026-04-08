@@ -17,6 +17,7 @@ interface SessionState {
   isConnecting: boolean;
   isConnected: boolean;
   error: string | null;
+  joinErrors: string[]; // Password mismatch / decryption errors from Trystero
 
   setSessionId: (id: string | null) => void;
   setSessionPassword: (password: string | null) => void;
@@ -32,6 +33,8 @@ interface SessionState {
   setIsConnecting: (connecting: boolean) => void;
   setIsConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
+  addJoinError: (error: string) => void;
+  clearJoinErrors: () => void;
   reset: () => void;
 }
 
@@ -51,7 +54,8 @@ const initialState = {
   tileOrderTimestamp: 0,
   isConnecting: false,
   isConnected: false,
-  error: null
+  error: null,
+  joinErrors: [] as string[]
 };
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -87,5 +91,10 @@ export const useSessionStore = create<SessionState>((set) => ({
   setIsConnecting: (isConnecting) => set({ isConnecting }),
   setIsConnected: (isConnected) => set({ isConnected }),
   setError: (error) => set({ error }),
+  addJoinError: (error) =>
+    set((state) => ({
+      joinErrors: state.joinErrors.includes(error) ? state.joinErrors : [...state.joinErrors, error]
+    })),
+  clearJoinErrors: () => set({ joinErrors: [] }),
   reset: () => set(initialState)
 }));

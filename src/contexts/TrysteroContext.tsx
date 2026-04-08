@@ -158,7 +158,13 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
   // Store refs - use direct store access for stable references
   const { addPeer, updatePeer, removePeer, clearPeers } = usePeerStore();
-  const { setActiveScreenSharePeerId, setFocusedPeerId, setTileOrder } = useSessionStore();
+  const {
+    setActiveScreenSharePeerId,
+    setFocusedPeerId,
+    setTileOrder,
+    addJoinError,
+    clearJoinErrors
+  } = useSessionStore();
 
   // Store functions in refs to prevent useCallback dependency changes
   // This is critical to prevent repeated stream additions that interfere with WebRTC negotiation
@@ -274,6 +280,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       // Handle peer join
       newRoom.onPeerJoin((peerId) => {
         console.log('[TrysteroProvider] Peer joined:', peerId);
+
+        // A peer successfully connected — clear any password mismatch errors
+        clearJoinErrors();
 
         addPeer({
           id: peerId,
@@ -711,7 +720,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         logRelayStatus();
       }, 10000);
     },
-    [addPeer, updatePeer, removePeer, setActiveScreenSharePeerId, setFocusedPeerId]
+    [addPeer, updatePeer, removePeer, setActiveScreenSharePeerId, setFocusedPeerId, clearJoinErrors]
   );
 
   const joinSession = useCallback(
@@ -736,7 +745,24 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         });
       });
 
-      const newRoom = joinRoom({ appId: APP_ID, rtcConfig: RTC_CONFIG, password }, newSessionId);
+      const joinErrorPeers = new Set<string>();
+      const newRoom = joinRoom(
+        { appId: APP_ID, rtcConfig: RTC_CONFIG, password },
+        newSessionId,
+        ({ error, peerId }) => {
+          console.error(
+            '[TrysteroProvider] Join error (wrong password?):',
+            error,
+            'peerId:',
+            peerId
+          );
+          // Only add one error per peer to avoid spam (multiple relays trigger this)
+          if (!joinErrorPeers.has(peerId)) {
+            joinErrorPeers.add(peerId);
+            addJoinError('Could not connect to peer — the room code or password may be incorrect.');
+          }
+        }
+      );
 
       // Initialize focus and tile order state with timestamps so we can sync to new peers.
       // Use timestamp = 1 as a "default but valid" value - it passes the > 0 check for sync,
@@ -771,7 +797,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
       return newRoom;
     },
-    [clearPeers, setupPeerHandlers]
+    [clearPeers, setupPeerHandlers, addJoinError]
   );
 
   const leaveSession = useCallback(() => {
