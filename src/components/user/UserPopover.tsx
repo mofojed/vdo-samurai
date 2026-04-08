@@ -84,6 +84,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
   return (
     <div
       ref={popoverRef}
+      data-testid="user-popover"
       className={`absolute right-2 top-full mt-1 w-72 border rounded-xl shadow-lg z-50 backdrop-blur-xl ${
         isExiting ? 'popover-exit' : 'popover-enter'
       } ${isSessionPage ? 'bg-black/80 border-gray-700' : 'border-white/30 bg-white/70'}`}
@@ -101,6 +102,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
+                data-testid="popover-display-name-input"
                 className={`w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent ${
                   isSessionPage
                     ? 'border-gray-600 bg-gray-900 text-white placeholder-gray-500 focus:ring-gray-500'
@@ -119,6 +121,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
+                data-testid="popover-full-name-input"
                 className={`w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent ${
                   isSessionPage
                     ? 'border-gray-600 bg-gray-900 text-white placeholder-gray-500 focus:ring-gray-500'
@@ -137,6 +140,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
                 type="text"
                 value={subtitle}
                 onChange={(e) => setSubtitle(e.target.value)}
+                data-testid="popover-subtitle-input"
                 className={`w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent ${
                   isSessionPage
                     ? 'border-gray-600 bg-gray-900 text-white placeholder-gray-500 focus:ring-gray-500'
@@ -148,6 +152,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
             <div className="flex gap-2 pt-1">
               <button
                 onClick={handleCancel}
+                data-testid="popover-cancel-button"
                 className={`flex-1 px-3 py-1.5 text-sm border rounded-lg cursor-pointer transition-colors ${
                   isSessionPage
                     ? 'text-gray-300 hover:text-white border-gray-600 hover:bg-gray-800'
@@ -159,6 +164,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
               <button
                 onClick={handleSave}
                 disabled={!displayName.trim() || !fullName.trim()}
+                data-testid="popover-save-button"
                 className={`flex-1 px-3 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed rounded-lg cursor-pointer transition-colors ${
                   isSessionPage
                     ? 'bg-white hover:bg-gray-200 text-black'
@@ -177,7 +183,10 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
               >
                 Display Name
               </div>
-              <div className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}>
+              <div
+                data-testid="popover-display-name"
+                className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}
+              >
                 {profile.displayName}
               </div>
             </div>
@@ -187,7 +196,10 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
               >
                 Full Name
               </div>
-              <div className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}>
+              <div
+                data-testid="popover-full-name"
+                className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}
+              >
                 {profile.fullName}
               </div>
             </div>
@@ -198,13 +210,17 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
                 >
                   Subtitle
                 </div>
-                <div className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}>
+                <div
+                  data-testid="popover-subtitle"
+                  className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}
+                >
                   {profile.subtitle}
                 </div>
               </div>
             )}
             <button
               onClick={() => setIsEditing(true)}
+              data-testid="popover-edit-button"
               className={`w-full px-3 py-1.5 text-sm border rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-2 ${
                 isSessionPage
                   ? 'text-gray-300 hover:text-white border-gray-600 hover:bg-gray-800'

@@ -167,7 +167,10 @@ export function TitleBar() {
             <ConnectionStatus />
             <TransferIndicator />
             {isRecording && (
-              <div className="flex items-center gap-1.5 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-medium">
+              <div
+                data-testid="rec-indicator"
+                className="flex items-center gap-1.5 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-medium"
+              >
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>

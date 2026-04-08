@@ -91,7 +91,7 @@ export function ExportProgress({
   }
 
   return (
-    <div className="bg-gray-900 rounded-xl p-6 space-y-6">
+    <div className="bg-gray-900 rounded-xl p-6 space-y-6" data-testid="export-progress">
       <div className="text-center">
         <div className="w-20 h-20 mx-auto mb-4 relative">
           {/* Circular progress */}
@@ -121,7 +121,9 @@ export function ExportProgress({
 
           {/* Percentage text */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-2xl font-bold text-white">{progressPercent}%</span>
+            <span className="text-2xl font-bold text-white" data-testid="export-progress-percent">
+              {progressPercent}%
+            </span>
           </div>
         </div>
 
@@ -133,9 +135,13 @@ export function ExportProgress({
 
       {/* Linear progress bar */}
       <div className="space-y-2">
-        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+        <div
+          className="h-2 bg-gray-700 rounded-full overflow-hidden"
+          data-testid="export-progress-bar"
+        >
           <div
             className="h-full bg-[--color-primary] transition-all duration-300"
+            data-testid="export-progress-bar-fill"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
@@ -174,6 +180,7 @@ export function ExportProgress({
       {/* Cancel button */}
       <button
         onClick={onCancel}
+        data-testid="export-cancel-button"
         className="w-full py-2 px-4 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
       >
         Cancel Export

@@ -49,6 +49,7 @@ function AnimatedNumber({ number, phase, onAnimationEnd }: AnimatedNumberProps) 
     // Fallback for numbers not in SVG_DATA
     return (
       <div
+        data-testid={`countdown-number-${number}`}
         className="text-[12rem] font-bold text-white"
         style={{
           textShadow: '4px 4px 8px rgba(0, 0, 0, 0.5), 8px 8px 16px rgba(0, 0, 0, 0.3)',
@@ -62,7 +63,11 @@ function AnimatedNumber({ number, phase, onAnimationEnd }: AnimatedNumberProps) 
   }
 
   return (
-    <div style={{ animation: getAnimation() }} onAnimationEnd={onAnimationEnd}>
+    <div
+      data-testid={`countdown-number-${number}`}
+      style={{ animation: getAnimation() }}
+      onAnimationEnd={onAnimationEnd}
+    >
       <svg
         viewBox={data.viewBox}
         className="w-[480px] h-[480px]"
@@ -155,7 +160,10 @@ export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+    <div
+      data-testid="countdown-overlay"
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"
+    >
       <div className="text-center">
         {displayCount !== null && phase !== 'hidden' && (
           <AnimatedNumber
@@ -165,7 +173,11 @@ export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
             onAnimationEnd={handleAnimationEnd}
           />
         )}
-        {phase !== 'hidden' && <p className="text-2xl text-gray-300 mt-4">Recording starting...</p>}
+        {phase !== 'hidden' && (
+          <p data-testid="countdown-text" className="text-2xl text-gray-300 mt-4">
+            Recording starting...
+          </p>
+        )}
       </div>
     </div>
   );

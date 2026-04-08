@@ -56,6 +56,9 @@ export function UserTile({
         onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
+        data-testid="user-tile"
+        data-tile-name={name}
+        data-tile-host={isHost ? 'true' : undefined}
         aria-pressed={isFocused}
         aria-label={`${name}${isHost ? ' (Host)' : ''}${isSharing ? ' sharing screen' : ''}${!videoEnabled ? ' video off' : ''}${!audioEnabled ? ' muted' : ''}. ${isFocused ? 'Currently focused.' : 'Click to focus.'}`}
         className={`
@@ -179,7 +182,10 @@ export function UserTile({
 
         {/* Name label */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 sm:p-2">
-          <span className="text-xs sm:text-sm font-medium truncate flex items-center gap-1">
+          <span
+            data-testid="tile-name"
+            className="text-xs sm:text-sm font-medium truncate flex items-center gap-1"
+          >
             {isHost && (
               <svg
                 className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 text-yellow-400"

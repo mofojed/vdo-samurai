@@ -213,7 +213,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
   // Show download screen after export
   if (exportStatus === 'complete' && outputBlob && outputUrl) {
     return (
-      <div className="h-full flex flex-col bg-gray-950">
+      <div className="h-full flex flex-col bg-gray-950" data-testid="export-complete-screen">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
           <h2 className="text-lg font-semibold text-white">Export Complete</h2>
@@ -222,6 +222,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
               resetExport();
             }}
             className="text-gray-400 hover:text-white transition-colors"
+            data-testid="back-to-editor-button"
           >
             Back to Editor
           </button>
@@ -405,6 +406,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
               onClick={skipBackward}
               className="p-1.5 text-gray-400 hover:text-white transition-colors rounded hover:bg-gray-800"
               title="Skip backward 5s (←)"
+              data-testid="skip-backward"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -420,6 +422,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
               onClick={togglePlayback}
               className="p-1.5 text-gray-400 hover:text-white transition-colors rounded hover:bg-gray-800"
               title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+              data-testid="play-pause"
             >
               {isPlaying ? (
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -436,6 +439,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
               onClick={skipForward}
               className="p-1.5 text-gray-400 hover:text-white transition-colors rounded hover:bg-gray-800"
               title="Skip forward 5s (→)"
+              data-testid="skip-forward"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -448,7 +452,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
             </button>
           </div>
 
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-500" data-testid="clip-count">
             {clips.length} clip{clips.length !== 1 ? 's' : ''}
             {selectedClipId && ' • 1 selected'}
           </span>
