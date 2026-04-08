@@ -11,7 +11,7 @@ interface ConnectionStatusProps {
 }
 
 export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
-  const { isConnected, isConnecting, sessionId } = useSessionStore();
+  const { isConnected, isConnecting, sessionId, joinErrors } = useSessionStore();
   const { peers } = usePeerStore();
   const { activePopover, togglePopover, closePopover } = usePopoverStore();
   const { isRecording, internalSessionId } = useRecordingStore();
@@ -61,8 +61,11 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
     return null;
   }
 
+  const hasJoinErrors = joinErrors.length > 0;
+
   const getStatusColor = () => {
     if (!isOnline) return 'bg-red-500';
+    if (hasJoinErrors) return 'bg-yellow-500';
     if (isConnecting) return 'bg-yellow-500';
     if (isConnected) return 'bg-green-500';
     return 'bg-gray-500';
@@ -70,6 +73,7 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
 
   const getStatusText = () => {
     if (!isOnline) return 'Offline';
+    if (hasJoinErrors) return 'Connection Issue';
     if (isConnecting) return 'Connecting...';
     if (isConnected) return 'Connected';
     return 'Disconnected';
@@ -85,7 +89,7 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
         aria-expanded={showDetails}
       >
         <span
-          className={`w-2 h-2 rounded-full ${getStatusColor()} ${isConnecting ? 'animate-pulse' : ''}`}
+          className={`w-2 h-2 rounded-full ${getStatusColor()} ${isConnecting || hasJoinErrors ? 'animate-pulse' : ''}`}
         />
         <span className="text-xs text-gray-300">{getStatusText()}</span>
         {peers.length > 0 && (
@@ -131,6 +135,23 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
                 <code className="text-xs text-gray-300 bg-[--color-dark] px-2 py-1 rounded block truncate">
                   {internalSessionId}
                 </code>
+              </div>
+            )}
+
+            {/* Connection errors */}
+            {hasJoinErrors && (
+              <div>
+                <h4 className="text-sm font-medium text-yellow-400 mb-2">⚠ Connection Issues</h4>
+                <ul className="space-y-1">
+                  {joinErrors.map((err, i) => (
+                    <li key={i} className="text-sm text-yellow-300/80">
+                      {err}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-gray-500 mt-2">
+                  Try leaving and rejoining with the correct room code.
+                </p>
               </div>
             )}
 
