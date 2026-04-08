@@ -7,6 +7,7 @@ export class LocalRecorder {
   private startTime: number = 0;
   private chunkIndex: number = 0;
   private onStopCallback: ((blob: Blob) => void) | null = null;
+  private onErrorCallback: ((error: Error) => void) | null = null;
   private pendingSaves: Promise<void>[] = [];
 
   async start(stream: MediaStream): Promise<string> {
@@ -55,6 +56,9 @@ export class LocalRecorder {
           this.onStopCallback(blob);
         } catch (err) {
           console.error('Failed to finalize recording:', err);
+          if (this.onErrorCallback) {
+            this.onErrorCallback(err instanceof Error ? err : new Error(String(err)));
+          }
         }
       }
     };
@@ -73,6 +77,7 @@ export class LocalRecorder {
       }
 
       this.onStopCallback = resolve;
+      this.onErrorCallback = reject;
       this.mediaRecorder.stop();
     });
   }
@@ -119,6 +124,7 @@ export class LocalRecorder {
     this.startTime = 0;
     this.chunkIndex = 0;
     this.onStopCallback = null;
+    this.onErrorCallback = null;
     this.pendingSaves = [];
   }
 }

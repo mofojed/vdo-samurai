@@ -9,6 +9,7 @@ interface ActiveClip {
   chunkIndex: number;
   pendingSaves: Promise<void>[];
   onStopCallback: ((blob: Blob) => void) | null;
+  onErrorCallback: ((error: Error) => void) | null;
 }
 
 /**
@@ -78,7 +79,8 @@ export class ClipRecorder {
       sourceType,
       chunkIndex: 0,
       pendingSaves: [],
-      onStopCallback: null
+      onStopCallback: null,
+      onErrorCallback: null
     };
 
     mediaRecorder.ondataavailable = (event) => {
@@ -109,6 +111,9 @@ export class ClipRecorder {
           clip.onStopCallback(blob);
         } catch (err) {
           console.error('[ClipRecorder] Failed to finalize clip:', err);
+          if (clip.onErrorCallback) {
+            clip.onErrorCallback(err instanceof Error ? err : new Error(String(err)));
+          }
         }
       }
     };
@@ -145,6 +150,10 @@ export class ClipRecorder {
         this.activeClips.delete(clipId);
         console.log(`[ClipRecorder] Stopped clip: ${clipId} at global time ${globalEndTime}ms`);
         resolve({ globalEndTime, blob });
+      };
+      clip.onErrorCallback = (error) => {
+        this.activeClips.delete(clipId);
+        reject(error);
       };
 
       clip.mediaRecorder.stop();
