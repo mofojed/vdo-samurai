@@ -21,6 +21,23 @@ const RTC_CONFIG: RTCConfiguration = {
   ]
 };
 
+// Explicit list of known-reliable Nostr relays for signaling.
+// Using explicit relays instead of trystero's defaults ensures all peers
+// connect to the same relays, improving connection reliability.
+const NOSTR_RELAY_URLS = [
+  'wss://relay.damus.io',
+  'wss://nos.lol',
+  'wss://relay.nostr.band',
+  'wss://nostr.mom',
+  'wss://relay.primal.net',
+  'wss://nostr.wine',
+  'wss://relay.snort.social',
+  'wss://purplepag.es'
+];
+
+// Use higher redundancy to increase chances of successful signaling
+const RELAY_REDUNDANCY = 5;
+
 import { usePeerStore } from '../store/peerStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
@@ -32,16 +49,24 @@ import { isElectron } from '../utils/platform';
 // Debug: Log relay socket status
 const logRelayStatus = () => {
   const sockets = getRelaySockets();
+  const entries = Object.entries(sockets).map(([key, socket]: [string, unknown]) => ({
+    key,
+    readyState: (socket as WebSocket)?.readyState,
+    readyStateText:
+      ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][(socket as WebSocket)?.readyState ?? -1] ||
+      'UNKNOWN'
+  }));
+  const openCount = entries.filter((e) => e.readyState === 1).length;
   console.log(
-    '[TrysteroProvider] Nostr relay sockets:',
-    Object.entries(sockets).map(([key, socket]: [string, unknown]) => ({
-      key,
-      readyState: (socket as WebSocket)?.readyState,
-      readyStateText:
-        ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][(socket as WebSocket)?.readyState ?? -1] ||
-        'UNKNOWN'
-    }))
+    `[TrysteroProvider] Nostr relay sockets: ${openCount}/${entries.length} OPEN`,
+    entries
   );
+  if (openCount === 0 && entries.length > 0) {
+    console.warn(
+      '[TrysteroProvider] WARNING: No relay sockets are OPEN — peer discovery will fail!'
+    );
+  }
+  return { entries, openCount, totalCount: entries.length };
 };
 
 // Debug: Compute info hash for verification
@@ -901,21 +926,33 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       });
 
       const joinErrorPeers = new Set<string>();
-      const newRoom = joinRoom({ appId: APP_ID, rtcConfig: RTC_CONFIG, password }, newSessionId, {
-        onJoinError: ({ error, peerId }) => {
-          console.error(
-            '[TrysteroProvider] Join error (wrong password?):',
-            error,
-            'peerId:',
-            peerId
-          );
-          // Only add one error per peer to avoid spam (multiple relays trigger this)
-          if (!joinErrorPeers.has(peerId)) {
-            joinErrorPeers.add(peerId);
-            addJoinError('Could not connect to peer — the room code or password may be incorrect.');
+      const newRoom = joinRoom(
+        {
+          appId: APP_ID,
+          rtcConfig: RTC_CONFIG,
+          password,
+          relayUrls: NOSTR_RELAY_URLS,
+          relayRedundancy: RELAY_REDUNDANCY
+        },
+        newSessionId,
+        {
+          onJoinError: ({ error, peerId }) => {
+            console.error(
+              '[TrysteroProvider] Join error (wrong password?):',
+              error,
+              'peerId:',
+              peerId
+            );
+            // Only add one error per peer to avoid spam (multiple relays trigger this)
+            if (!joinErrorPeers.has(peerId)) {
+              joinErrorPeers.add(peerId);
+              addJoinError(
+                'Could not connect to peer — the room code or password may be incorrect.'
+              );
+            }
           }
         }
-      });
+      );
 
       // Initialize focus and tile order state with timestamps so we can sync to new peers.
       // Use timestamp = 1 as a "default but valid" value - it passes the > 0 check for sync,
@@ -936,10 +973,24 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         storeFunctionsRef.current.setTileOrder(['self'], initialTimestamp);
       }
 
-      // Log MQTT status after a short delay to allow connections
+      // Log relay status after a short delay to allow connections,
+      // then monitor periodically for relay health
       setTimeout(() => {
         logRelayStatus();
       }, 2000);
+
+      // Periodic relay health monitoring - log every 30s to help diagnose connectivity
+      if (debugIntervalRef.current) {
+        clearInterval(debugIntervalRef.current);
+      }
+      debugIntervalRef.current = setInterval(() => {
+        const { openCount, totalCount } = logRelayStatus();
+        if (openCount === 0 && totalCount > 0) {
+          console.error(
+            '[TrysteroProvider] All relay sockets are down! Peers will not be able to discover each other.'
+          );
+        }
+      }, 30000);
 
       roomRef.current = newRoom;
       setRoom(newRoom);
