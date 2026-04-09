@@ -131,8 +131,25 @@ function getMediaMockScript(instanceId: string): string {
     }
 
     if (constraints.audio) {
-      // No audio - mocks are silent
-      console.log('[MOCK] Audio requested but mocks are silent');
+      // Generate a synthetic audio track using OscillatorNode
+      try {
+        const audioCtx = new AudioContext();
+        const oscillator = audioCtx.createOscillator();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime); // Low volume
+        const dest = audioCtx.createMediaStreamDestination();
+        oscillator.connect(gain);
+        gain.connect(dest);
+        oscillator.start();
+        dest.stream.getAudioTracks().forEach(track => {
+          stream.addTrack(track);
+        });
+        console.log('[MOCK] Audio track added (440Hz sine wave)');
+      } catch (err) {
+        console.error('[MOCK] Failed to create audio track:', err);
+      }
     }
 
     console.log('[MOCK] getUserMedia returning stream with', stream.getTracks().length, 'tracks');
@@ -264,15 +281,21 @@ export async function launchApp(instanceId: string): Promise<AppInstance> {
  */
 export async function closeApp(instance: AppInstance): Promise<void> {
   // Helper to wrap operations with a timeout
-  const withTimeout = <T>(promise: Promise<T>, ms: number, name: string): Promise<{ result: T; timedOut: false } | { timedOut: true }> => {
+  const withTimeout = <T>(
+    promise: Promise<T>,
+    ms: number,
+    name: string
+  ): Promise<{ result: T; timedOut: false } | { timedOut: true }> => {
     return Promise.race([
       promise.then((result) => ({ result, timedOut: false as const })),
       new Promise<{ timedOut: true }>((resolve) => {
         setTimeout(() => {
-          console.warn(`[E2E] ${name} timed out after ${ms}ms for ${instance.instanceId}, will force kill`);
+          console.warn(
+            `[E2E] ${name} timed out after ${ms}ms for ${instance.instanceId}, will force kill`
+          );
           resolve({ timedOut: true });
         }, ms);
-      }),
+      })
     ]);
   };
 

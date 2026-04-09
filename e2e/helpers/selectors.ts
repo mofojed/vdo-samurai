@@ -22,6 +22,7 @@ export const selectors = {
     // Media controls
     cameraToggle: 'button[aria-label*="camera"]',
     micToggle: 'button[aria-label*="microphone"]',
+    micToggleIndicator: '[data-testid="mic-toggle"]',
 
     // Participant tiles
     participantList: '[role="list"][aria-label*="Participant"]',
