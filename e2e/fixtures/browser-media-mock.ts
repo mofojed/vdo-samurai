@@ -128,8 +128,25 @@ export function getBrowserMediaMockScript(testServerBaseUrl: string): string {
     }
 
     if (constraints.audio) {
-      // No audio - mocks are silent
-      console.log('[BROWSER-MOCK] Audio requested but mocks are silent');
+      // Generate a synthetic audio track using OscillatorNode
+      try {
+        const audioCtx = new AudioContext();
+        const oscillator = audioCtx.createOscillator();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime); // Low volume
+        const dest = audioCtx.createMediaStreamDestination();
+        oscillator.connect(gain);
+        gain.connect(dest);
+        oscillator.start();
+        dest.stream.getAudioTracks().forEach(track => {
+          stream.addTrack(track);
+        });
+        console.log('[BROWSER-MOCK] Audio track added (440Hz sine wave)');
+      } catch (err) {
+        console.error('[BROWSER-MOCK] Failed to create audio track:', err);
+      }
     }
 
     console.log('[BROWSER-MOCK] getUserMedia returning stream with', stream.getTracks().length, 'tracks');

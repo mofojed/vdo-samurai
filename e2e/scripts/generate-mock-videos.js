@@ -24,8 +24,7 @@ const OUTPUT_DIR = join(__dirname, '../test-assets/videos');
 // Parse command line arguments
 const args = process.argv.slice(2);
 const durationIndex = args.indexOf('--duration');
-const DURATION_SECONDS =
-  durationIndex !== -1 ? parseInt(args[durationIndex + 1], 10) : 10 * 60; // Default 10 minutes
+const DURATION_SECONDS = durationIndex !== -1 ? parseInt(args[durationIndex + 1], 10) : 10 * 60; // Default 10 minutes
 
 // Video configurations matching the existing mock colors
 const VIDEO_CONFIGS = [
@@ -149,15 +148,13 @@ async function generateVideo(config) {
   const { name, width, height } = config;
   const outputPath = join(OUTPUT_DIR, `${name}.mp4`);
 
-  console.log(
-    `\nGenerating ${name}.mp4 (${width}x${height}, ${DURATION_SECONDS}s @ ${FPS}fps)...`
-  );
+  console.log(`\nGenerating ${name}.mp4 (${width}x${height}, ${DURATION_SECONDS}s @ ${FPS}fps)...`);
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
 
   return new Promise((resolve, reject) => {
-    // FFmpeg command: read raw video from stdin, encode to H.264
+    // FFmpeg command: read raw video from stdin + generate sine wave audio, encode to H.264+AAC
     const ffmpeg = spawn(ffmpegPath, [
       '-y', // Overwrite output
       '-f',
@@ -169,9 +166,17 @@ async function generateVideo(config) {
       '-r',
       String(FPS), // Input framerate
       '-i',
-      '-', // Read from stdin
+      '-', // Read from stdin (video)
+      '-f',
+      'lavfi', // Audio from filter
+      '-i',
+      `sine=frequency=440:duration=${DURATION_SECONDS}`, // 440Hz sine wave
       '-c:v',
       'libx264', // H.264 codec
+      '-c:a',
+      'aac', // AAC audio codec
+      '-b:a',
+      '128k', // Audio bitrate
       '-pix_fmt',
       'yuv420p', // Output pixel format (for compatibility)
       '-preset',
@@ -180,6 +185,7 @@ async function generateVideo(config) {
       '23', // Quality level
       '-movflags',
       '+faststart', // Enable streaming
+      '-shortest', // End when shortest input ends
       outputPath
     ]);
 

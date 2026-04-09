@@ -13,6 +13,7 @@ import { SpeedDialButton, SpeedDialPanel } from '../components/speeddial';
 import { isElectron } from '../utils/platform';
 import { useRecording } from '../hooks/useRecording';
 import { useEditPoints } from '../hooks/useEditPoints';
+import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useFileTransfer } from '../hooks/useFileTransfer';
 import { usePendingTransfers } from '../hooks/usePendingTransfers';
 import { MainDisplay } from '../components/video/MainDisplay';
@@ -54,7 +55,8 @@ export function SessionPage() {
     }
     return sessionId || '';
   }, [sessionId, searchParams]);
-  const { isConnected, isConnecting, isHost, localStream } = useSessionStore();
+  const { isConnected, isConnecting, isHost, localStream, localRecordingStream } =
+    useSessionStore();
   const { localBlob, localScreenBlob } = useRecordingStore();
   const { mode, setMode, initializeClips } = useNLEStore();
   const { createSession, joinSession } = useWebRTC();
@@ -182,6 +184,10 @@ export function SessionPage() {
 
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
+
+  // Audio level detection for mic indicator — use localRecordingStream (HQ) because
+  // it has the original audio track from getUserMedia, not a clone which may start muted
+  const { level: micLevel } = useAudioLevel(audioEnabled ? localRecordingStream : null);
 
   // Track when recording starts so we know when it stops
   useEffect(() => {
@@ -683,59 +689,70 @@ export function SessionPage() {
             </button>
 
             {/* Audio toggle */}
-            <button
-              onClick={() => {
-                const enabled = toggleAudio();
-                setAudioEnabled(enabled);
-                broadcastVideoState(videoEnabled, enabled);
-              }}
-              className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
-                audioEnabled
-                  ? 'bg-black/50 hover:bg-black/70 text-white'
-                  : 'bg-red-500/70 hover:bg-red-500/90 text-white'
-              }`}
-              aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
-              aria-pressed={audioEnabled}
-              title={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
-            >
-              {audioEnabled ? (
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
-                  />
-                </svg>
-              )}
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => {
+                  const enabled = toggleAudio();
+                  setAudioEnabled(enabled);
+                  broadcastVideoState(videoEnabled, enabled);
+                }}
+                className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
+                  audioEnabled
+                    ? 'bg-black/50 hover:bg-black/70 text-white'
+                    : 'bg-red-500/70 hover:bg-red-500/90 text-white'
+                }`}
+                style={
+                  audioEnabled && micLevel > 0.05
+                    ? {
+                        boxShadow: `0 0 0 ${2 + micLevel * 3}px rgba(74, 222, 128, ${0.4 + micLevel * 0.5})`
+                      }
+                    : undefined
+                }
+                aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+                aria-pressed={audioEnabled}
+                title={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+                data-testid="mic-toggle"
+                data-mic-level={audioEnabled ? micLevel.toFixed(3) : '0'}
+              >
+                {audioEnabled ? (
+                  <svg
+                    className="w-5 h-5 sm:w-6 sm:h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    className="w-5 h-5 sm:w-6 sm:h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
+                    />
+                  </svg>
+                )}
+              </button>
+            </div>
 
             {/* Screen share - hidden on small mobile screens */}
             <div className="hidden sm:block">
