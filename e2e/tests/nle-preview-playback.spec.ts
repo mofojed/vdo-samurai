@@ -1,11 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { launchApp, closeApp, type AppInstance } from '../fixtures/electron-app';
 import { selectors } from '../helpers/selectors';
-import {
-  waitForRecordingComplete,
-  waitForLocalBlob,
-  sleep,
-} from '../helpers/wait-helpers';
+import { waitForRecordingComplete, waitForLocalBlob, sleep } from '../helpers/wait-helpers';
 
 /**
  * E2E tests for NLE editor preview playback controls
@@ -91,7 +87,7 @@ async function getNLEState(page: Page) {
         totalDuration: state.totalDuration,
         selectedClipId: state.selectedClipId,
         playheadPosition: state.playheadPosition,
-        isPlaying: state.isPlaying,
+        isPlaying: state.isPlaying
       };
     }
     return null;
@@ -146,11 +142,14 @@ test.describe('NLE Editor: Preview Playback', () => {
 
     // Verify initial state: not playing, playhead at 0
     const initialState = await getNLEState(page);
-    console.log('[NLE Playback] Initial state:', JSON.stringify({
-      isPlaying: initialState?.isPlaying,
-      playheadPosition: initialState?.playheadPosition,
-      totalDuration: initialState?.totalDuration,
-    }));
+    console.log(
+      '[NLE Playback] Initial state:',
+      JSON.stringify({
+        isPlaying: initialState?.isPlaying,
+        playheadPosition: initialState?.playheadPosition,
+        totalDuration: initialState?.totalDuration
+      })
+    );
     expect(initialState).not.toBeNull();
     expect(initialState!.isPlaying).toBe(false);
     expect(initialState!.totalDuration).toBeGreaterThan(1000);
@@ -306,11 +305,14 @@ test.describe('NLE Editor: Preview Playback', () => {
 
     // Verify playback auto-stopped
     const finalState = await getNLEState(page);
-    console.log('[NLE AutoStop] Final state:', JSON.stringify({
-      isPlaying: finalState!.isPlaying,
-      playheadPosition: finalState!.playheadPosition,
-      totalDuration: finalState!.totalDuration,
-    }));
+    console.log(
+      '[NLE AutoStop] Final state:',
+      JSON.stringify({
+        isPlaying: finalState!.isPlaying,
+        playheadPosition: finalState!.playheadPosition,
+        totalDuration: finalState!.totalDuration
+      })
+    );
     expect(finalState!.isPlaying).toBe(false);
 
     // Playhead should be at or very near the end
@@ -483,5 +485,139 @@ test.describe('NLE Editor: Preview Playback', () => {
     expect(finalState!.isPlaying).toBe(false);
 
     console.log('[NLE PlayFromEnd] Play from end test passed!');
+  });
+
+  test('video playback is smooth without excessive pause/play cycles', async () => {
+    app = await launchApp('nle-smooth-' + Date.now());
+    const { page } = app;
+
+    await setupSessionAsHost(page, 'Smooth Playback User');
+
+    // Record for 5 seconds to get a meaningful clip
+    console.log('[NLE Smooth] Recording for 5 seconds...');
+    await recordForDuration(page, 5000);
+
+    await waitForNLEEditor(page);
+    await sleep(500);
+
+    const initialState = await getNLEState(page);
+    expect(initialState).not.toBeNull();
+    expect(initialState!.totalDuration).toBeGreaterThan(2000);
+
+    // Set playhead to beginning
+    await setPlayheadPosition(page, 0);
+    await sleep(200);
+
+    // Instrument the video element to track pause/play events
+    await page.evaluate(() => {
+      const video = document.querySelector('video');
+      if (!video) return;
+      (window as unknown as Record<string, unknown>).__videoPlayCount__ = 0;
+      (window as unknown as Record<string, unknown>).__videoPauseCount__ = 0;
+      (window as unknown as Record<string, unknown>).__videoPlayEvents__ = [];
+      video.addEventListener('play', () => {
+        const w = window as unknown as Record<
+          string,
+          number | Array<{ time: number; type: string }>
+        >;
+        w.__videoPlayCount__ = ((w.__videoPlayCount__ as number) || 0) + 1;
+        (w.__videoPlayEvents__ as Array<{ time: number; type: string }>).push({
+          time: Date.now(),
+          type: 'play'
+        });
+      });
+      video.addEventListener('pause', () => {
+        const w = window as unknown as Record<
+          string,
+          number | Array<{ time: number; type: string }>
+        >;
+        w.__videoPauseCount__ = ((w.__videoPauseCount__ as number) || 0) + 1;
+        (w.__videoPlayEvents__ as Array<{ time: number; type: string }>).push({
+          time: Date.now(),
+          type: 'pause'
+        });
+      });
+    });
+
+    // Start playback
+    console.log('[NLE Smooth] Starting playback...');
+    await page.click(selectors.nle.playPauseButton);
+    await sleep(200);
+
+    // Verify playing
+    const playingState = await getNLEState(page);
+    expect(playingState!.isPlaying).toBe(true);
+
+    // Let it play for 2 seconds
+    await sleep(2000);
+
+    // Pause playback
+    await page.click(selectors.nle.playPauseButton);
+    await sleep(200);
+
+    // Check video element event counts
+    const eventCounts = await page.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>;
+      return {
+        playCount: w.__videoPlayCount__ as number,
+        pauseCount: w.__videoPauseCount__ as number,
+        events: w.__videoPlayEvents__ as Array<{ time: number; type: string }>
+      };
+    });
+
+    console.log('[NLE Smooth] Video play() called:', eventCounts.playCount, 'times');
+    console.log('[NLE Smooth] Video pause() called:', eventCounts.pauseCount, 'times');
+    console.log('[NLE Smooth] Event timeline:', JSON.stringify(eventCounts.events?.slice(0, 20)));
+
+    // During a 2s playback window, play() should be called very few times:
+    // - Ideally 1 (initial play)
+    // - Maybe 2-3 if the video needed to buffer or onCanPlay fired
+    // The bug caused play() to be called ~60+ times per second (once per animation frame)
+    // Allow up to 5 for tolerance (buffering, onCanPlay events, etc.)
+    expect(eventCounts.playCount).toBeLessThanOrEqual(5);
+
+    // Similarly, pause should only be called once (when we click pause)
+    // The bug caused pause() every frame too
+    // Allow up to 5 for same tolerance
+    expect(eventCounts.pauseCount).toBeLessThanOrEqual(5);
+
+    // Also verify playhead advanced smoothly - sample positions during playback
+    // Start another playback period and sample positions
+    await setPlayheadPosition(page, 0);
+    await sleep(200);
+
+    await page.click(selectors.nle.playPauseButton);
+    await sleep(200);
+
+    // Sample playhead positions over 1 second at ~100ms intervals
+    const positions: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      await sleep(100);
+      const state = await getNLEState(page);
+      if (state?.playheadPosition != null) {
+        positions.push(state.playheadPosition);
+      }
+    }
+
+    await page.click(selectors.nle.playPauseButton);
+
+    console.log(
+      '[NLE Smooth] Sampled positions:',
+      positions.map((p) => Math.round(p))
+    );
+
+    // Verify positions are monotonically increasing (smooth advancement)
+    for (let i = 1; i < positions.length; i++) {
+      expect(positions[i]).toBeGreaterThan(positions[i - 1]);
+    }
+
+    // Verify positions advance at roughly real-time rate
+    // Over ~1 second of playback, position should advance ~1000ms (with tolerance)
+    const totalAdvance = positions[positions.length - 1] - positions[0];
+    console.log('[NLE Smooth] Total advance over ~1s:', Math.round(totalAdvance), 'ms');
+    expect(totalAdvance).toBeGreaterThan(500); // At least 500ms advance in ~1s
+    expect(totalAdvance).toBeLessThan(2000); // Not more than 2s advance in ~1s
+
+    console.log('[NLE Smooth] Smooth playback test passed!');
   });
 });

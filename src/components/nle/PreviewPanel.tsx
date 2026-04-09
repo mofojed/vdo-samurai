@@ -7,6 +7,8 @@ export function PreviewPanel() {
   const mainVideoRef = useRef<HTMLVideoElement>(null);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const animationRef = useRef<number | null>(null);
+  // Track playhead position in a ref for the animation loop to avoid stale closures
+  const playheadRef = useRef(0);
   // Cache URLs by peer and type: key format is `${peerId ?? 'local'}-${type}`
   const urlsRef = useRef<Map<string, string>>(new Map());
 
@@ -74,7 +76,8 @@ export function PreviewPanel() {
 
   // Find current clip and seek to correct position
   const updatePreview = useCallback(() => {
-    const currentClip = getClipAtPlayhead(clips, playheadPosition);
+    const pos = playheadRef.current;
+    const currentClip = getClipAtPlayhead(clips, pos);
 
     if (!currentClip) {
       setCurrentMainUrl(null);
@@ -98,7 +101,7 @@ export function PreviewPanel() {
     setIsWaitingForTransfer(false);
 
     // Get the time within the original video
-    const timeInClip = getTimeInClip(currentClip, playheadPosition, clips);
+    const timeInClip = getTimeInClip(currentClip, pos, clips);
     const seekTime = timeInClip / 1000; // Convert to seconds
 
     // Determine main video and overlay:
@@ -133,14 +136,21 @@ export function PreviewPanel() {
         video.currentTime = seekTime;
       }
     }
-  }, [clips, playheadPosition, getSourcesForPeer, currentMainUrl, currentCameraUrl]);
+  }, [clips, getSourcesForPeer, currentMainUrl, currentCameraUrl]);
 
-  // Update preview when playhead position changes
+  // Keep playheadRef in sync with external position changes (e.g. timeline click, skip)
+  useEffect(() => {
+    playheadRef.current = playheadPosition;
+  }, [playheadPosition]);
+
+  // Update preview when playhead position changes (from external seeks, not during playback)
   // This effect intentionally calls setState via updatePreview to sync video preview with playhead
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    updatePreview();
-  }, [updatePreview]);
+    if (!isPlaying) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      updatePreview();
+    }
+  }, [playheadPosition, updatePreview, isPlaying]);
 
   // Handle seeking when main video source changes or loads
   useEffect(() => {
@@ -148,9 +158,10 @@ export function PreviewPanel() {
     if (!video || !currentMainUrl) return;
 
     const handleLoadedMetadata = () => {
-      const currentClip = getClipAtPlayhead(clips, playheadPosition);
+      const pos = playheadRef.current;
+      const currentClip = getClipAtPlayhead(clips, pos);
       if (currentClip && video) {
-        const timeInClip = getTimeInClip(currentClip, playheadPosition, clips);
+        const timeInClip = getTimeInClip(currentClip, pos, clips);
         video.currentTime = timeInClip / 1000;
       }
     };
@@ -165,7 +176,7 @@ export function PreviewPanel() {
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
-  }, [currentMainUrl, clips, playheadPosition]);
+  }, [currentMainUrl, clips]);
 
   // Handle seeking when camera overlay video source changes or loads
   useEffect(() => {
@@ -173,9 +184,10 @@ export function PreviewPanel() {
     if (!video || !currentCameraUrl) return;
 
     const handleLoadedMetadata = () => {
-      const currentClip = getClipAtPlayhead(clips, playheadPosition);
+      const pos = playheadRef.current;
+      const currentClip = getClipAtPlayhead(clips, pos);
       if (currentClip && video) {
-        const timeInClip = getTimeInClip(currentClip, playheadPosition, clips);
+        const timeInClip = getTimeInClip(currentClip, pos, clips);
         video.currentTime = timeInClip / 1000;
       }
     };
@@ -190,9 +202,9 @@ export function PreviewPanel() {
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
-  }, [currentCameraUrl, clips, playheadPosition]);
+  }, [currentCameraUrl, clips]);
 
-  // Playback loop
+  // Playback loop - separated from playheadPosition to avoid pause/play cycle every frame
   useEffect(() => {
     if (!isPlaying) {
       if (animationRef.current) {
@@ -232,14 +244,16 @@ export function PreviewPanel() {
       const deltaTime = currentTime - lastTime;
       lastTime = currentTime;
 
-      const newPosition = playheadPosition + deltaTime;
+      const newPosition = playheadRef.current + deltaTime;
 
       if (newPosition >= totalDuration) {
+        playheadRef.current = totalDuration;
         setPlayheadPosition(totalDuration);
         setIsPlaying(false);
         return;
       }
 
+      playheadRef.current = newPosition;
       setPlayheadPosition(newPosition);
       animationRef.current = requestAnimationFrame(animate);
     };
@@ -251,9 +265,11 @@ export function PreviewPanel() {
         cancelAnimationFrame(animationRef.current);
       }
     };
+    // NOTE: playheadPosition intentionally excluded to prevent pause/play cycle every frame.
+    // The animation loop reads from playheadRef instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isPlaying,
-    playheadPosition,
     totalDuration,
     setPlayheadPosition,
     setIsPlaying,
