@@ -147,8 +147,7 @@ export function PreviewPanel() {
   // This effect intentionally calls setState via updatePreview to sync video preview with playhead
   useEffect(() => {
     if (!isPlaying) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      updatePreview();
+      updatePreview(); // eslint-disable-line react-hooks/set-state-in-effect -- intentional: sync video preview with playhead on external seeks
     }
   }, [playheadPosition, updatePreview, isPlaying]);
 
@@ -267,7 +266,6 @@ export function PreviewPanel() {
     };
     // NOTE: playheadPosition intentionally excluded to prevent pause/play cycle every frame.
     // The animation loop reads from playheadRef instead.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isPlaying,
     totalDuration,

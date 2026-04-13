@@ -7,7 +7,7 @@ import {
   joinSession,
   waitForP2PConnection
 } from '../helpers/test-setup';
-import { sleep, waitForPeerCount } from '../helpers/wait-helpers';
+import { sleep } from '../helpers/wait-helpers';
 
 /**
  * Wait for all pages to see the expected number of tiles (self + peers).
@@ -69,16 +69,6 @@ async function getPeerCount(page: AppInstance['page']): Promise<number> {
     const store = (window as unknown as Record<string, { getState?: () => { peers?: unknown[] } }>)
       .usePeerStore;
     return store?.getState?.()?.peers?.length ?? 0;
-  });
-}
-
-/**
- * Get self ID from the trystero context
- */
-async function getSelfId(page: AppInstance['page']): Promise<string | null> {
-  return page.evaluate(() => {
-    const win = window as unknown as { __trysteroSelfId?: string };
-    return win.__trysteroSelfId ?? null;
   });
 }
 
