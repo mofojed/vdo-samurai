@@ -19,6 +19,11 @@ export const RecordButton = forwardRef<HTMLButtonElement, RecordButtonProps>(fun
   const isDisabled = isCountingDown;
 
   const buttonText = isCountingDown ? 'Starting...' : isRecording ? 'Stop' : 'Record';
+  const tooltip = isCountingDown
+    ? 'Recording starting…'
+    : isRecording
+      ? 'Stop recording'
+      : 'Start recording';
 
   return (
     <button
@@ -27,6 +32,7 @@ export const RecordButton = forwardRef<HTMLButtonElement, RecordButtonProps>(fun
       disabled={isDisabled}
       aria-label={buttonText}
       aria-pressed={isRecording}
+      title={tooltip}
       className={`
         flex items-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 sm:py-2.5 rounded-full font-medium transition-all
         focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black
@@ -39,10 +45,10 @@ export const RecordButton = forwardRef<HTMLButtonElement, RecordButtonProps>(fun
       `}
     >
       <span
-        className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isRecording ? 'bg-white' : 'bg-red-500 rounded-full'}`}
+        className={`w-2.5 h-2.5 sm:w-3 sm:h-3 pointer-events-none ${isRecording ? 'bg-white' : 'bg-red-500 rounded-full'}`}
         aria-hidden="true"
       />
-      <span className="text-sm">{buttonText}</span>
+      <span className="text-sm pointer-events-none">{buttonText}</span>
     </button>
   );
 });

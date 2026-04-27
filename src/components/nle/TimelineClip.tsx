@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { NLEClip } from '../../store/nleStore';
 import { getClipDuration } from '../../store/nleStore';
+import type { LayoutMode } from '../../store/sessionStore';
 import { getColorValue } from '../../utils/colorHash';
 
 interface TimelineClipProps {
@@ -160,12 +161,33 @@ export function TimelineClip({
         </span>
       </div>
 
+      {/* Layout-mode badge in top-right */}
+      <div
+        className="absolute top-0.5 right-0.5 px-1 py-0.5 rounded bg-black/60 text-[9px] font-medium text-white pointer-events-none"
+        data-testid="clip-layout-badge"
+        data-layout-mode={clip.layoutMode}
+        title={`Layout: ${clip.layoutMode}`}
+      >
+        {layoutBadgeLabel(clip.layoutMode)}
+      </div>
+
       {/* Duration indicator on hover */}
       <div className="absolute -top-6 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-black/80 rounded text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
         {formatDuration(duration)}
       </div>
     </div>
   );
+}
+
+function layoutBadgeLabel(mode: LayoutMode): string {
+  switch (mode) {
+    case 'spotlight':
+      return 'SPOT';
+    case 'screen-pip':
+      return 'PIP';
+    case 'grid':
+      return 'GRID';
+  }
 }
 
 function formatDuration(ms: number): string {

@@ -39,7 +39,7 @@ const NOSTR_RELAY_URLS = [
 const RELAY_REDUNDANCY = 5;
 
 import { usePeerStore } from '../store/peerStore';
-import { useSessionStore } from '../store/sessionStore';
+import { useSessionStore, type LayoutMode } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
 import { useNLEStore } from '../store/nleStore';
 import { useCompositeStore } from '../store/compositeStore';
@@ -119,6 +119,11 @@ interface FocusChangeData {
   timestamp: number;
 }
 
+interface LayoutChangeData {
+  layoutMode: LayoutMode;
+  timestamp: number;
+}
+
 interface VideoStateData {
   type: string;
   videoEnabled: boolean;
@@ -164,6 +169,7 @@ interface TrysteroContextValue {
   removeLocalStream: (stream: MediaStream, isScreen?: boolean) => void;
   setActiveScreenShare: (peerId: string | null) => void;
   broadcastFocusChange: (peerId: string | null) => void;
+  broadcastLayoutChange: (mode: LayoutMode) => void;
   broadcastVideoState: (videoEnabled: boolean, audioEnabled: boolean) => void;
   broadcastSessionInfo: (internalSessionId: string) => void;
   broadcastTileOrder: (order: string[]) => void;
@@ -202,6 +208,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   const {
     setActiveScreenSharePeerId,
     setFocusedPeerId,
+    setLayoutMode,
     setTileOrder,
     addJoinError,
     clearJoinErrors
@@ -212,12 +219,18 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   const storeFunctionsRef = useRef({
     setActiveScreenSharePeerId,
     setFocusedPeerId,
+    setLayoutMode,
     setTileOrder
   });
   // Keep refs updated via useEffect (not during render)
   useEffect(() => {
-    storeFunctionsRef.current = { setActiveScreenSharePeerId, setFocusedPeerId, setTileOrder };
-  }, [setActiveScreenSharePeerId, setFocusedPeerId, setTileOrder]);
+    storeFunctionsRef.current = {
+      setActiveScreenSharePeerId,
+      setFocusedPeerId,
+      setLayoutMode,
+      setTileOrder
+    };
+  }, [setActiveScreenSharePeerId, setFocusedPeerId, setLayoutMode, setTileOrder]);
 
   // State that doesn't need to trigger re-renders
   const stateRef = useRef<{
@@ -233,6 +246,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     isElectron: boolean;
     focusedPeerId: string | null;
     focusTimestamp: number;
+    layoutMode: LayoutMode;
+    layoutModeTimestamp: number;
     tileOrder: string[];
     tileOrderTimestamp: number;
     // Mesh health / auto-rejoin state
@@ -256,6 +271,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     isElectron: isElectron(),
     focusedPeerId: null,
     focusTimestamp: 0,
+    layoutMode: 'spotlight' as LayoutMode,
+    layoutModeTimestamp: 0,
     tileOrder: [],
     tileOrderTimestamp: 0,
     password: null,
@@ -273,6 +290,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendScreenShareStatus: ((data: ScreenShareStatusData, peerId?: string) => void) | null;
     sendActiveScreenShare: ((data: ActiveScreenShareData, peerId?: string) => void) | null;
     sendFocusChange: ((data: FocusChangeData, peerId?: string) => void) | null;
+    sendLayoutChange: ((data: LayoutChangeData, peerId?: string) => void) | null;
     sendVideoState: ((data: VideoStateData, peerId?: string) => void) | null;
     sendSessionInfo: ((data: SessionInfoData, peerId?: string) => void) | null;
     sendSessionInfoRequest: ((data: SessionInfoRequestData, peerId?: string) => void) | null;
@@ -286,6 +304,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendScreenShareStatus: null,
     sendActiveScreenShare: null,
     sendFocusChange: null,
+    sendLayoutChange: null,
     sendVideoState: null,
     sendSessionInfo: null,
     sendSessionInfoRequest: null,
@@ -319,6 +338,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendFocusChange, onFocusChange] = newRoom.makeAction<any>('focus-change');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendLayoutChange, onLayoutChange] = newRoom.makeAction<any>('layout-chg');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendVideoState, onVideoState] = newRoom.makeAction<any>('video-state');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendSessionInfo, onSessionInfo] = newRoom.makeAction<any>('session-info');
@@ -349,6 +370,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         sendScreenShareStatus,
         sendActiveScreenShare,
         sendFocusChange,
+        sendLayoutChange,
         sendVideoState,
         sendSessionInfo,
         sendSessionInfoRequest,
@@ -466,6 +488,18 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           console.log('[TrysteroProvider] Not host, skipping focus sync to new peer:', peerId);
         } else {
           console.log('[TrysteroProvider] No focus state to send to new peer:', peerId);
+        }
+
+        // Send current layout mode to the new peer (host is authority)
+        if (stateRef.current.isHost && stateRef.current.layoutModeTimestamp > 0) {
+          const syncTimestamp = Date.now();
+          const layoutMsg: LayoutChangeData = {
+            layoutMode: stateRef.current.layoutMode,
+            timestamp: syncTimestamp
+          };
+          stateRef.current.layoutModeTimestamp = syncTimestamp;
+          console.log('[TrysteroProvider] Sending layout state to new peer:', peerId, layoutMsg);
+          sendLayoutChange(layoutMsg, peerId);
         }
 
         // Send current tile order to the new peer (so they sync to existing order)
@@ -638,6 +672,33 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
             );
           }
         }
+      });
+
+      // Handle layout change messages with timestamp-based conflict resolution
+      onLayoutChange((data: unknown) => {
+        if (typeof data !== 'object' || data === null) return;
+        const layoutData = data as LayoutChangeData;
+        const incomingTimestamp = layoutData.timestamp || 0;
+        if (incomingTimestamp <= stateRef.current.layoutModeTimestamp) {
+          console.log(
+            '[TrysteroProvider] Ignoring stale layout change:',
+            layoutData.layoutMode,
+            'incoming:',
+            incomingTimestamp,
+            'current:',
+            stateRef.current.layoutModeTimestamp
+          );
+          return;
+        }
+        console.log(
+          '[TrysteroProvider] Layout changed to:',
+          layoutData.layoutMode,
+          'timestamp:',
+          incomingTimestamp
+        );
+        stateRef.current.layoutMode = layoutData.layoutMode;
+        stateRef.current.layoutModeTimestamp = incomingTimestamp;
+        storeFunctionsRef.current.setLayoutMode(layoutData.layoutMode, incomingTimestamp);
       });
 
       // Handle video state messages (video/audio on/off)
@@ -1379,6 +1440,20 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     [] // No dependencies - uses refs for stable identity
   );
 
+  // Broadcast layout mode change
+  const broadcastLayoutChange = useCallback((mode: LayoutMode) => {
+    const timestamp = Date.now();
+
+    stateRef.current.layoutMode = mode;
+    stateRef.current.layoutModeTimestamp = timestamp;
+
+    storeFunctionsRef.current.setLayoutMode(mode, timestamp);
+    if (sendersRef.current.sendLayoutChange) {
+      const data: LayoutChangeData = { layoutMode: mode, timestamp };
+      sendersRef.current.sendLayoutChange(data);
+    }
+  }, []);
+
   // Broadcast video/audio state changes
   const broadcastVideoState = useCallback((videoEnabled: boolean, audioEnabled: boolean) => {
     if (sendersRef.current.sendVideoState) {
@@ -1529,6 +1604,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         removeLocalStream,
         setActiveScreenShare,
         broadcastFocusChange,
+        broadcastLayoutChange,
         broadcastVideoState,
         broadcastSessionInfo,
         broadcastTileOrder,

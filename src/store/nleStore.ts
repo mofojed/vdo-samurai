@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { LayoutMode } from './sessionStore';
 
 export interface NLEClip {
   id: string;
@@ -11,6 +12,7 @@ export interface NLEClip {
   trimEnd: number; // trim from end (ms)
   color: string; // Tailwind color name
   sourceType: 'camera' | 'screen' | 'audio-only' | 'speeddial'; // Type of recording source
+  layoutMode: LayoutMode; // Layout in effect when this clip was captured
   globalStartTime?: number; // Global start time from clip-based recording
   globalEndTime?: number; // Global end time from clip-based recording
   recordingId?: string; // Reference to the recording blob

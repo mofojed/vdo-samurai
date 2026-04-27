@@ -43,7 +43,7 @@ interface VideoInfo {
 }
 
 // Timeline export types
-type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only';
+type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only' | 'speeddial' | 'grid';
 
 interface ExportSourceRef {
   sourceIndex: number;
@@ -60,6 +60,8 @@ interface ExportSegment {
   layout: ExportLayout;
   camera?: ExportSourceRef;
   screen?: ExportSourceRef;
+  speeddial?: ExportSourceRef;
+  gridSources?: ExportSourceRef[];
 }
 
 interface TimelineExportOptions {

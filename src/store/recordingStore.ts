@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import type { RecordingClip } from '../types/recording';
+import type { LayoutMode } from './sessionStore';
 
 export interface EditPoint {
   timestamp: number;
   focusedPeerId: string | null;
-  type: 'focus-change' | 'marker';
+  layoutMode: LayoutMode;
+  type: 'focus-change' | 'layout-change' | 'marker';
 }
 
 export interface SpeedDialPlaybackRecord {

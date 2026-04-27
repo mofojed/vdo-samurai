@@ -49,7 +49,16 @@ export const selectors = {
     shareLinkButton: '[data-testid="share-link-button"]',
 
     // Speed Dial
-    speedDialButton: 'button[aria-label="Open Speed Dial"]'
+    speedDialButton: 'button[aria-label="Open Speed Dial"]',
+
+    // Layout picker
+    layoutPicker: '[data-testid="layout-picker"]',
+    layoutSpotlight: '[data-testid="layout-spotlight"]',
+    layoutScreenPip: '[data-testid="layout-screen-pip"]',
+    layoutGrid: '[data-testid="layout-grid"]',
+    pipCamera: '[data-testid="layout-pip-camera"]',
+    gridTileBySelfId: '[data-testid="grid-tile-self"]',
+    mainDisplayRegion: '[role="region"][aria-label*="Main video display"], [role="region"][aria-label*="Grid layout"]'
   },
 
   // Speed Dial Panel

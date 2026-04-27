@@ -4,9 +4,17 @@ interface VideoElementProps {
   stream: MediaStream | null;
   muted?: boolean;
   className?: string;
+  /** Set the toolbar position anchor (`--video-anchor`) on this element. Defaults to true.
+   *  Pass false for secondary videos (e.g. PIP overlays) so the toolbar doesn't follow them. */
+  anchor?: boolean;
 }
 
-export function VideoElement({ stream, muted = false, className = '' }: VideoElementProps) {
+export function VideoElement({
+  stream,
+  muted = false,
+  className = '',
+  anchor = true
+}: VideoElementProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -38,7 +46,7 @@ export function VideoElement({ stream, muted = false, className = '' }: VideoEle
   return (
     <div
       className={`overflow-hidden rounded-lg ${className}`}
-      style={{ anchorName: '--video-anchor' } as React.CSSProperties}
+      style={anchor ? ({ anchorName: '--video-anchor' } as React.CSSProperties) : undefined}
     >
       <video
         ref={videoRef}

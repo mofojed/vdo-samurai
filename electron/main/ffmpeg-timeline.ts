@@ -40,7 +40,7 @@ const CONFIG = {
 const PIP_X = CONFIG.OUTPUT_WIDTH - CONFIG.PIP_SIZE - CONFIG.PIP_PADDING;
 const PIP_Y = CONFIG.OUTPUT_HEIGHT - CONFIG.PIP_SIZE - CONFIG.PIP_PADDING;
 
-export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only' | 'speeddial';
+export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only' | 'speeddial' | 'grid';
 
 export interface ExportSourceRef {
   sourceIndex: number;
@@ -58,6 +58,7 @@ export interface ExportSegment {
   camera?: ExportSourceRef;
   screen?: ExportSourceRef;
   speeddial?: ExportSourceRef;
+  gridSources?: ExportSourceRef[]; // One ref per peer camera, used when layout === 'grid'
 }
 
 export interface TimelineExportOptions {
@@ -136,6 +137,31 @@ function buildSquircleAlphaExpr(
     // Default: fully opaque
     `255))))`
   ].join('');
+}
+
+/**
+ * Compute xstack grid arrangement for N inputs at a fixed canvas size.
+ *
+ * Returns the grid dimensions and an xstack `layout` string referencing
+ * tile positions in absolute pixels. xstack lays out inputs in the order
+ * they appear in the filter chain, so layout[i] is the (x,y) of input i.
+ */
+function computeGridLayout(
+  n: number,
+  canvasW: number,
+  canvasH: number
+): { rows: number; cols: number; tileW: number; tileH: number; layout: string } {
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+  const rows = Math.max(1, Math.ceil(n / cols));
+  const tileW = Math.floor(canvasW / cols);
+  const tileH = Math.floor(canvasH / rows);
+  const positions: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    positions.push(`${col * tileW}_${row * tileH}`);
+  }
+  return { rows, cols, tileW, tileH, layout: positions.join('|') };
 }
 
 /**
@@ -244,6 +270,67 @@ function buildTimelineFilterComplex(
       segmentAudioFilters.push(
         `[${sdIdx}:a]atrim=start=${sdTrimStartS}:duration=${segDurationS},asetpts=PTS-STARTPTS[${segLabel}_a]`
       );
+    } else if (seg.layout === 'grid' && seg.gridSources && seg.gridSources.length > 0) {
+      // Grid layout: tile every camera source on the canvas, mix all audio.
+      const refs = seg.gridSources;
+      const n = refs.length;
+
+      if (n === 1) {
+        // Degenerate grid — render as full-frame camera.
+        const ref = refs[0];
+        const trimS = ref.trimStartMs / 1000;
+        filters.push(
+          `[${ref.sourceIndex}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,` +
+            `pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=${CONFIG.BACKGROUND_COLOR},` +
+            `setsar=1,trim=start=${trimS}:duration=${segDurationS},setpts=PTS-STARTPTS,` +
+            `fps=${CONFIG.FRAMERATE}[${segLabel}]`
+        );
+        segmentAudioFilters.push(
+          `[${ref.sourceIndex}:a]atrim=start=${trimS}:duration=${segDurationS},asetpts=PTS-STARTPTS[${segLabel}_a]`
+        );
+      } else {
+        const { tileW, tileH, layout: xstackLayout } = computeGridLayout(n, W, H);
+
+        // Per-tile video: scale + letterbox + trim + cfr
+        const tileLabels: string[] = [];
+        for (let j = 0; j < n; j++) {
+          const ref = refs[j];
+          const trimS = ref.trimStartMs / 1000;
+          const tileLabel = `${segLabel}_v${j}`;
+          tileLabels.push(`[${tileLabel}]`);
+          filters.push(
+            `[${ref.sourceIndex}:v]scale=${tileW}:${tileH}:force_original_aspect_ratio=decrease,` +
+              `pad=${tileW}:${tileH}:(ow-iw)/2:(oh-ih)/2:color=${CONFIG.BACKGROUND_COLOR},` +
+              `setsar=1,trim=start=${trimS}:duration=${segDurationS},setpts=PTS-STARTPTS,` +
+              `fps=${CONFIG.FRAMERATE}[${tileLabel}]`
+          );
+        }
+
+        // xstack the tiles to fill the canvas
+        filters.push(
+          `${tileLabels.join('')}xstack=inputs=${n}:layout=${xstackLayout}:fill=${CONFIG.BACKGROUND_COLOR}[${segLabel}_grid]`
+        );
+        // Pad to exact canvas size (xstack output is rows*tileH, cols*tileW which
+        // may be slightly smaller than W,H due to integer rounding)
+        filters.push(
+          `[${segLabel}_grid]pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=${CONFIG.BACKGROUND_COLOR},setsar=1[${segLabel}]`
+        );
+
+        // Per-tile audio + mix all
+        const audioLabels: string[] = [];
+        for (let j = 0; j < n; j++) {
+          const ref = refs[j];
+          const trimS = ref.trimStartMs / 1000;
+          const aLabel = `${segLabel}_a${j}`;
+          audioLabels.push(`[${aLabel}]`);
+          segmentAudioFilters.push(
+            `[${ref.sourceIndex}:a]atrim=start=${trimS}:duration=${segDurationS},asetpts=PTS-STARTPTS[${aLabel}]`
+          );
+        }
+        segmentAudioFilters.push(
+          `${audioLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0[${segLabel}_a]`
+        );
+      }
     } else {
       // Fallback: black frame with silent audio (shouldn't happen normally)
       filters.push(
@@ -377,9 +464,30 @@ function buildFilterWithAudioFallback(
     let audioSourceIdx: number | null = null;
     let trimStartS = 0;
 
-    // Determine which source provides audio for this segment
-    // screen-pip uses camera audio (for mic), others use their primary source
-    if (seg.layout === 'screen-pip' && seg.camera) {
+    // Grid layout has multiple per-tile audio filters; replace each one
+    // independently before falling out to the single-source layouts below.
+    if (seg.layout === 'grid' && seg.gridSources && seg.gridSources.length > 1) {
+      const segDurationS = (seg.endTimeMs - seg.startTimeMs) / 1000;
+      for (let j = 0; j < seg.gridSources.length; j++) {
+        const ref = seg.gridSources[j];
+        const info = fileInfos.get(ref.sourceIndex);
+        if (info && !info.hasAudio) {
+          const trimS = ref.trimStartMs / 1000;
+          const oldFilter = `[${ref.sourceIndex}:a]atrim=start=${trimS}:duration=${segDurationS},asetpts=PTS-STARTPTS[seg${i}_a${j}]`;
+          const newFilter = `anullsrc=r=48000:cl=stereo,atrim=duration=${segDurationS}[seg${i}_a${j}]`;
+          filter = filter.replace(oldFilter, newFilter);
+        }
+      }
+      continue;
+    }
+
+    // Single-tile grid degenerate case writes [seg{i}_a] (no per-tile suffix);
+    // it falls through to the standard pattern below using gridSources[0].
+    if (seg.layout === 'grid' && seg.gridSources && seg.gridSources.length === 1) {
+      audioSourceIdx = seg.gridSources[0].sourceIndex;
+      trimStartS = seg.gridSources[0].trimStartMs / 1000;
+    } else if (seg.layout === 'screen-pip' && seg.camera) {
+      // screen-pip uses camera audio (for mic), others use their primary source
       audioSourceIdx = seg.camera.sourceIndex;
       trimStartS = seg.camera.trimStartMs / 1000;
     } else if (seg.layout === 'camera-only' && seg.camera) {

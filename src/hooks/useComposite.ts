@@ -152,13 +152,50 @@ function buildExportPlan(
     const screenIndex = sourceIndexMap.get(screenKey);
 
     console.log(
-      `[Export] Clip ${clip.id} (${clip.peerName}): cameraKey=${cameraKey} (${cameraIndex}), screenKey=${screenKey} (${screenIndex})`
+      `[Export] Clip ${clip.id} (${clip.peerName}): cameraKey=${cameraKey} (${cameraIndex}), screenKey=${screenKey} (${screenIndex}), layoutMode=${clip.layoutMode}`
     );
 
-    // Determine layout based on available sources
+    // trimStartMs is the seek position within each source file:
+    // clip.startTime is the offset within the source blob, clip.trimStart is user-applied trim.
+    // All recordings are assumed to start at recording-start, so the same seek applies
+    // to every source.
+    const sourceSeekMs = clip.startTime + clip.trimStart;
+
+    // Grid layout: roster is every camera source available, regardless of focus.
+    if (clip.layoutMode === 'grid') {
+      const cameraSources = sources.filter((s) => s.sourceType === 'camera');
+      if (cameraSources.length === 0) {
+        console.warn(`[Export] Grid clip ${clip.id} has no camera sources, skipping`);
+        continue;
+      }
+
+      const gridSources = cameraSources.map((s) => ({
+        sourceIndex: sourceIndexMap.get(s.id)!,
+        trimStartMs: sourceSeekMs,
+        trimEndMs: clip.trimEnd
+      }));
+
+      segments.push({
+        id: clip.id,
+        startTimeMs: currentOutputTime,
+        endTimeMs: currentOutputTime + clipDurationMs,
+        peerId: clip.peerId,
+        peerName: clip.peerName,
+        layout: 'grid',
+        gridSources
+      });
+      currentOutputTime += clipDurationMs;
+      continue;
+    }
+
+    // Determine layout based on available sources for the focused peer
     let layout: ExportLayout;
-    if (screenIndex !== undefined && cameraIndex !== undefined) {
+    if (clip.layoutMode === 'screen-pip' && screenIndex !== undefined && cameraIndex !== undefined) {
       layout = 'screen-pip';
+    } else if (screenIndex !== undefined && cameraIndex !== undefined) {
+      // Spotlight + screen sharing peer: prefer camera (matches "person spotlight"
+      // semantics in the live UI when layoutMode === 'spotlight').
+      layout = clip.layoutMode === 'spotlight' ? 'camera-only' : 'screen-pip';
     } else if (screenIndex !== undefined) {
       layout = 'screen-only';
     } else if (cameraIndex !== undefined) {
@@ -179,11 +216,6 @@ function buildExportPlan(
       peerName: clip.peerName,
       layout
     };
-
-    // Add source references
-    // trimStartMs is the seek position within the source file:
-    // clip.startTime is the offset within the source blob, clip.trimStart is user-applied trim
-    const sourceSeekMs = clip.startTime + clip.trimStart;
 
     if (cameraIndex !== undefined) {
       segment.camera = {

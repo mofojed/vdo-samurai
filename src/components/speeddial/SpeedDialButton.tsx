@@ -20,7 +20,7 @@ export function SpeedDialButton() {
     >
       {/* Film/video icon */}
       <svg
-        className="w-5 h-5 sm:w-6 sm:h-6"
+        className="w-5 h-5 sm:w-6 sm:h-6 pointer-events-none"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"

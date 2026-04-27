@@ -9,6 +9,7 @@ import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
 import { useTrystero } from '../contexts/TrysteroContext';
 import { ScreenShareButton } from '../components/video/ScreenShareButton';
+import { LayoutPicker } from '../components/video/LayoutPicker';
 import { SpeedDialButton, SpeedDialPanel } from '../components/speeddial';
 import { isElectron } from '../utils/platform';
 import { useRecording } from '../hooks/useRecording';
@@ -55,7 +56,7 @@ export function SessionPage() {
     }
     return sessionId || '';
   }, [sessionId, searchParams]);
-  const { isConnected, isConnecting, isHost, localStream, localRecordingStream } =
+  const { isConnected, isConnecting, isHost, localStream, localRecordingStream, layoutMode } =
     useSessionStore();
   const { localBlob, localScreenBlob } = useRecordingStore();
   const { mode, setMode, initializeClips } = useNLEStore();
@@ -365,14 +366,16 @@ export function SessionPage() {
     const clips: NLEClip[] = [];
     let clipOrder = 0;
 
-    // Convert edit points to clips
-    // Each focus-change creates a boundary for the next clip
-    if (editPoints.length > 0) {
-      for (let i = 0; i < editPoints.length; i++) {
-        const point = editPoints[i];
-        const nextPoint = editPoints[i + 1];
-
-        if (point.type !== 'focus-change') continue;
+    // Convert edit points to clips. Both focus-change and layout-change events
+    // create clip boundaries. Each clip carries the (focusedPeerId, layoutMode)
+    // pair that was in effect at its start.
+    const boundaries = editPoints.filter(
+      (p) => p.type === 'focus-change' || p.type === 'layout-change'
+    );
+    if (boundaries.length > 0) {
+      for (let i = 0; i < boundaries.length; i++) {
+        const point = boundaries[i];
+        const nextPoint = boundaries[i + 1];
 
         const clipStartTime = Math.max(0, point.timestamp);
         const clipEndTime = nextPoint
@@ -421,7 +424,8 @@ export function SessionPage() {
           trimStart: 0,
           trimEnd: 0,
           color: getColorForName(peerName),
-          sourceType: 'camera'
+          sourceType: 'camera',
+          layoutMode: point.layoutMode
         });
 
         clipOrder++;
@@ -440,7 +444,8 @@ export function SessionPage() {
         trimStart: 0,
         trimEnd: 0,
         color: getColorForName(currentProfile?.displayName || 'You'),
-        sourceType: 'camera'
+        sourceType: 'camera',
+        layoutMode: 'spotlight'
       });
       clipOrder++;
     }
@@ -467,6 +472,7 @@ export function SessionPage() {
         trimEnd: 0,
         color: getColorForName(`SD: ${playback.clipName}`),
         sourceType: 'speeddial',
+        layoutMode: 'spotlight',
         speedDialClipId: playback.clipId,
         speedDialClipPath: playback.clipPath
       });
@@ -637,12 +643,19 @@ export function SessionPage() {
       {/* Main video display with overlaid controls */}
       <div className="flex-1 min-h-0 p-2 sm:p-3 pb-1 video-container relative">
         <MainDisplay>
-          {/* Controls - anchored to video via CSS anchor positioning */}
+          {/* Controls - anchored to video via CSS anchor positioning.
+              Toolbar is split into logical groups separated by thin dividers:
+                - Self media (camera, mic)
+                - Sharing (screen share)
+                - Director (layout picker, speed dial — host only)
+                - Recording (record button — host only) */}
           <div
-            className="flex items-center justify-center gap-1 sm:gap-2 relative"
+            className="flex items-center justify-center gap-2 sm:gap-3 relative px-3 py-1.5 rounded-full bg-black/30 backdrop-blur-sm"
             role="toolbar"
             aria-label="Session controls"
           >
+            {/* Group: Self media */}
+            <div className="flex items-center gap-1 sm:gap-1.5" role="group" aria-label="Your media">
             {/* Video toggle */}
             <button
               onClick={handleToggleVideo}
@@ -657,7 +670,7 @@ export function SessionPage() {
             >
               {videoEnabled ? (
                 <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6"
+                  className="w-5 h-5 sm:w-6 sm:h-6 pointer-events-none"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -672,7 +685,7 @@ export function SessionPage() {
                 </svg>
               ) : (
                 <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6"
+                  className="w-5 h-5 sm:w-6 sm:h-6 pointer-events-none"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -716,7 +729,7 @@ export function SessionPage() {
               >
                 {audioEnabled ? (
                   <svg
-                    className="w-5 h-5 sm:w-6 sm:h-6"
+                    className="w-5 h-5 sm:w-6 sm:h-6 pointer-events-none"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -731,7 +744,7 @@ export function SessionPage() {
                   </svg>
                 ) : (
                   <svg
-                    className="w-5 h-5 sm:w-6 sm:h-6"
+                    className="w-5 h-5 sm:w-6 sm:h-6 pointer-events-none"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -753,31 +766,49 @@ export function SessionPage() {
                 )}
               </button>
             </div>
+            </div>
 
-            {/* Screen share - hidden on small mobile screens */}
-            <div className="hidden sm:block">
+            {/* Group: Sharing (hidden on small mobile screens) */}
+            <div
+              className="hidden sm:flex items-center gap-1 sm:gap-1.5 border-l border-white/15 pl-2 sm:pl-3"
+              role="group"
+              aria-label="Sharing"
+            >
               <ScreenShareButton
                 onScreenShareStartedDuringRecording={onScreenShareStarted}
                 onScreenShareEndedDuringRecording={onScreenShareEnded}
               />
             </div>
 
-            {/* Speed Dial button (host only, Electron only) */}
-            {isHost && isElectron() && (
-              <div className="hidden sm:block relative">
-                <SpeedDialButton />
+            {/* Group: Director controls (host only) */}
+            {isHost && (
+              <div
+                className="hidden sm:flex items-center gap-1 sm:gap-1.5 border-l border-white/15 pl-2 sm:pl-3"
+                role="group"
+                aria-label="Director controls"
+              >
+                <LayoutPicker isHost={isHost} />
+                {isElectron() && <SpeedDialButton />}
               </div>
             )}
 
-            {/* Record button (host only) */}
-            <RecordButton
-              ref={recordButtonRef}
-              isRecording={isRecording}
-              isHost={isHost}
-              countdown={countdown}
-              onStart={startRecording}
-              onStop={stopRecording}
-            />
+            {/* Group: Recording (host only) */}
+            {isHost && (
+              <div
+                className="flex items-center gap-1 sm:gap-1.5 border-l border-white/15 pl-2 sm:pl-3"
+                role="group"
+                aria-label="Recording"
+              >
+                <RecordButton
+                  ref={recordButtonRef}
+                  isRecording={isRecording}
+                  isHost={isHost}
+                  countdown={countdown}
+                  onStart={startRecording}
+                  onStop={stopRecording}
+                />
+              </div>
+            )}
           </div>
         </MainDisplay>
 
@@ -790,10 +821,13 @@ export function SessionPage() {
         )}
       </div>
 
-      {/* Participant tiles - fixed height row */}
-      <div className="flex-shrink-0 px-2 sm:px-3 pb-2 sm:pb-3">
-        <TileGrid />
-      </div>
+      {/* Participant tiles - fixed height row. Hidden in grid layout where the
+          main display already shows every peer. */}
+      {layoutMode !== 'grid' && (
+        <div className="flex-shrink-0 px-2 sm:px-3 pb-2 sm:pb-3">
+          <TileGrid />
+        </div>
+      )}
     </div>
   );
 }

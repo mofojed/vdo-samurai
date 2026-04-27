@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+export type LayoutMode = 'spotlight' | 'screen-pip' | 'grid';
+
 interface SessionState {
   sessionId: string | null;
   sessionPassword: string | null; // Password for Trystero encryption (kept separate from sessionId)
@@ -13,6 +15,8 @@ interface SessionState {
   focusedPeerId: string | null;
   focusTimestamp: number; // Timestamp of last focus change for conflict resolution
   activeScreenSharePeerId: string | null; // Only one screen share streams at a time
+  layoutMode: LayoutMode; // Host-controlled layout mode applied to all peers
+  layoutModeTimestamp: number; // Timestamp of last layout change for conflict resolution
   tileOrder: string[]; // Ordered participant IDs ('self' for local user)
   tileOrderTimestamp: number; // Timestamp of last tile order change for conflict resolution
   isConnecting: boolean;
@@ -31,6 +35,7 @@ interface SessionState {
   setLocalSpeedDialStream: (stream: MediaStream | null) => void;
   setFocusedPeerId: (peerId: string | null, timestamp?: number) => void;
   setActiveScreenSharePeerId: (peerId: string | null) => void;
+  setLayoutMode: (mode: LayoutMode, timestamp?: number) => void;
   setTileOrder: (order: string[], timestamp?: number) => void;
   setIsConnecting: (connecting: boolean) => void;
   setIsConnected: (connected: boolean) => void;
@@ -53,6 +58,8 @@ const initialState = {
   focusedPeerId: null,
   focusTimestamp: 0,
   activeScreenSharePeerId: null,
+  layoutMode: 'spotlight' as LayoutMode,
+  layoutModeTimestamp: 0,
   tileOrder: [] as string[],
   tileOrderTimestamp: 0,
   isConnecting: false,
@@ -90,6 +97,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   setFocusedPeerId: (focusedPeerId, timestamp) =>
     set({ focusedPeerId, focusTimestamp: timestamp ?? Date.now() }),
   setActiveScreenSharePeerId: (activeScreenSharePeerId) => set({ activeScreenSharePeerId }),
+  setLayoutMode: (layoutMode, timestamp) =>
+    set({ layoutMode, layoutModeTimestamp: timestamp ?? Date.now() }),
   setTileOrder: (tileOrder, timestamp) =>
     set({ tileOrder, tileOrderTimestamp: timestamp ?? Date.now() }),
   setIsConnecting: (isConnecting) => set({ isConnecting }),

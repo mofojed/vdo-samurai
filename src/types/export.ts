@@ -2,7 +2,7 @@
  * Types for timeline-aware video export
  */
 
-export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only' | 'speeddial';
+export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only' | 'speeddial' | 'grid';
 
 export interface ExportSourceRef {
   sourceIndex: number; // Index in the input files array
@@ -20,6 +20,7 @@ export interface ExportSegment {
   camera?: ExportSourceRef;
   screen?: ExportSourceRef;
   speeddial?: ExportSourceRef; // Speed dial source reference
+  gridSources?: ExportSourceRef[]; // One per peer camera in grid layout
 }
 
 export interface ExportSource {
