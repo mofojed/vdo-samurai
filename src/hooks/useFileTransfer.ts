@@ -3,7 +3,11 @@ import { useTransferStore, type Transfer, type RecordingType } from '../store/tr
 import { usePeerStore } from '../store/peerStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useTrystero } from '../contexts/TrysteroContext';
-import { FileTransferProtocol } from '../utils/FileTransferProtocol';
+import {
+  FileTransferProtocol,
+  type AckPayload,
+  type TransferMetadata
+} from '../utils/FileTransferProtocol';
 import { TRANSFER_CONFIG } from '../utils/transferConfig';
 
 export interface QueuedTransfer {
@@ -17,11 +21,10 @@ export interface QueuedTransfer {
   error?: string;
 }
 
-// Throttle progress broadcasts to avoid flooding the network
-const PROGRESS_BROADCAST_INTERVAL_MS = 500;
-const PROGRESS_BROADCAST_THRESHOLD = 0.1; // 10%
+// Throttle receiver-side progress broadcasts to avoid flooding the network.
+const PROGRESS_BROADCAST_INTERVAL_MS = 250;
+const PROGRESS_BROADCAST_THRESHOLD = 0.05;
 
-// Parse recording type from filename (e.g., "camera-recording-123.webm" or "screen-recording-123.webm")
 function parseRecordingType(filename: string): RecordingType {
   if (filename.includes('screen-')) {
     return 'screen';
@@ -36,16 +39,35 @@ export function useFileTransfer() {
   const { userName } = useSessionStore();
   const initializedRef = useRef(false);
 
-  // Transfer queue and protocol management
   const queueRef = useRef<QueuedTransfer[]>([]);
   const protocolsRef = useRef<Map<string, FileTransferProtocol>>(new Map());
   const activeCountRef = useRef(0);
-  const sendTransferRef = useRef<((data: unknown, peerId: string) => void) | null>(null);
+  const sendBinaryRef = useRef<
+    | ((
+        data: Blob,
+        peerId: string,
+        metadata: TransferMetadata,
+        onProgress: (percent: number) => void
+      ) => Promise<void>)
+    | null
+  >(null);
+  const sendAckRef = useRef<((data: AckPayload, peerId: string) => void) | null>(null);
 
-  // Track last broadcast time and progress for throttling
-  const lastBroadcastRef = useRef<Map<string, { time: number; progress: number }>>(new Map());
+  // Per-receive-transfer state: who is sending it to us, what filename, last broadcast time/progress.
+  const incomingTransfersRef = useRef<
+    Map<
+      string,
+      {
+        peerId: string;
+        senderName: string;
+        filename: string;
+        size: number;
+        lastBroadcastTime: number;
+        lastBroadcastProgress: number;
+      }
+    >
+  >(new Map());
 
-  // Setup beforeunload warning
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isTransferring()) {
@@ -80,59 +102,32 @@ export function useFileTransfer() {
     setTransfers(transferList);
   }, [setTransfers, selfId, userName]);
 
+  // Sender-side: broadcast only on status changes. Mid-transfer progress is owned
+  // by the receiver, who has authoritative truth about how much they actually have.
   const updateQueuedTransfer = useCallback(
     (id: string, updates: Partial<QueuedTransfer>) => {
       const index = queueRef.current.findIndex((t) => t.id === id);
-      if (index !== -1) {
-        const oldTransfer = queueRef.current[index];
-        queueRef.current[index] = { ...oldTransfer, ...updates };
-        updateStoreFromQueue();
+      if (index === -1) return;
 
-        const updatedTransfer = queueRef.current[index];
+      const oldTransfer = queueRef.current[index];
+      queueRef.current[index] = { ...oldTransfer, ...updates };
+      updateStoreFromQueue();
+
+      if (updates.status && updates.status !== oldTransfer.status) {
+        const updated = queueRef.current[index];
         const senderName = userName || 'Anonymous';
-
-        // Determine if we should broadcast this update
-        let shouldBroadcast = false;
-
-        // Always broadcast status changes (pending->active, active->complete, error)
-        if (updates.status && updates.status !== oldTransfer.status) {
-          shouldBroadcast = true;
-        }
-
-        // Throttle progress updates: only broadcast if enough time or progress delta
-        if (updates.progress !== undefined && !shouldBroadcast) {
-          const lastBroadcast = lastBroadcastRef.current.get(id);
-          const now = Date.now();
-          const progressDelta = updates.progress - (lastBroadcast?.progress ?? 0);
-
-          if (
-            !lastBroadcast ||
-            now - lastBroadcast.time >= PROGRESS_BROADCAST_INTERVAL_MS ||
-            progressDelta >= PROGRESS_BROADCAST_THRESHOLD
-          ) {
-            shouldBroadcast = true;
-          }
-        }
-
-        if (shouldBroadcast) {
-          lastBroadcastRef.current.set(id, {
-            time: Date.now(),
-            progress: updatedTransfer.progress
-          });
-
-          broadcastTransferStatus({
-            transferId: updatedTransfer.id,
-            senderId: selfId,
-            senderName: senderName,
-            receiverId: updatedTransfer.peerId,
-            receiverName: updatedTransfer.peerName,
-            filename: updatedTransfer.filename,
-            size: updatedTransfer.blob.size,
-            progress: updatedTransfer.progress,
-            status: updatedTransfer.status,
-            error: updatedTransfer.error
-          });
-        }
+        broadcastTransferStatus({
+          transferId: updated.id,
+          senderId: selfId,
+          senderName: senderName,
+          receiverId: updated.peerId,
+          receiverName: updated.peerName,
+          filename: updated.filename,
+          size: updated.blob.size,
+          progress: updated.progress,
+          status: updated.status,
+          error: updated.error
+        });
       }
     },
     [updateStoreFromQueue, broadcastTransferStatus, selfId, userName]
@@ -156,7 +151,12 @@ export function useFileTransfer() {
 
     try {
       await protocol.sendFile(next.blob, next.filename, next.id, (sent, total) => {
-        updateQueuedTransfer(next.id, { progress: sent / total });
+        // Local UI only — no broadcast. Receiver-side progress drives observers.
+        const idx = queueRef.current.findIndex((t) => t.id === next.id);
+        if (idx !== -1) {
+          queueRef.current[idx] = { ...queueRef.current[idx], progress: sent / total };
+          updateStoreFromQueue();
+        }
       });
       updateQueuedTransfer(next.id, { status: 'complete', progress: 1 });
     } catch (error) {
@@ -166,25 +166,70 @@ export function useFileTransfer() {
       activeCountRef.current--;
       processNext();
     }
-  }, [updateQueuedTransfer]);
+  }, [updateQueuedTransfer, updateStoreFromQueue]);
 
   const addPeer = useCallback(
     (peerId: string) => {
-      if (protocolsRef.current.has(peerId) || !sendTransferRef.current) return;
+      if (protocolsRef.current.has(peerId)) return;
+      if (!sendBinaryRef.current || !sendAckRef.current) return;
 
-      const sendTransfer = sendTransferRef.current;
+      const sendBinary = sendBinaryRef.current;
+      const sendAck = sendAckRef.current;
       const protocol = new FileTransferProtocol();
 
-      protocol.initialize((data) => {
-        sendTransfer(data, peerId);
+      protocol.initialize(
+        (data, metadata, onProgress) => sendBinary(data, peerId, metadata, onProgress),
+        (data) => sendAck(data, peerId)
+      );
+
+      protocol.setReceiveProgressHandler((transferId, progress) => {
+        const incoming = incomingTransfersRef.current.get(transferId);
+        if (!incoming) return;
+
+        useTransferStore.getState().updateTransfer(transferId, { progress });
+
+        const now = Date.now();
+        const delta = progress - incoming.lastBroadcastProgress;
+        if (
+          now - incoming.lastBroadcastTime >= PROGRESS_BROADCAST_INTERVAL_MS ||
+          delta >= PROGRESS_BROADCAST_THRESHOLD
+        ) {
+          incoming.lastBroadcastTime = now;
+          incoming.lastBroadcastProgress = progress;
+          broadcastTransferStatus({
+            transferId,
+            senderId: incoming.peerId,
+            senderName: incoming.senderName,
+            receiverId: selfId,
+            receiverName: useSessionStore.getState().userName || 'Anonymous',
+            filename: incoming.filename,
+            size: incoming.size,
+            progress,
+            status: 'active'
+          });
+        }
       });
 
-      protocol.onProgress((transferId, progress) => {
-        updateQueuedTransfer(transferId, { progress });
-      });
+      protocol.setCompleteHandler((transferId, blob, filename) => {
+        const incoming = incomingTransfersRef.current.get(transferId);
+        incomingTransfersRef.current.delete(transferId);
 
-      protocol.onComplete((transferId, blob, filename) => {
-        updateQueuedTransfer(transferId, { status: 'complete', progress: 1 });
+        useTransferStore.getState().updateTransfer(transferId, { progress: 1, status: 'complete' });
+
+        if (incoming) {
+          broadcastTransferStatus({
+            transferId,
+            senderId: incoming.peerId,
+            senderName: incoming.senderName,
+            receiverId: selfId,
+            receiverName: useSessionStore.getState().userName || 'Anonymous',
+            filename: incoming.filename,
+            size: incoming.size,
+            progress: 1,
+            status: 'complete'
+          });
+        }
+
         const currentPeers = usePeerStore.getState().peers;
         const peer = currentPeers.find((p) => p.id === peerId);
         const recordingType = parseRecordingType(filename || '');
@@ -197,13 +242,18 @@ export function useFileTransfer() {
         });
       });
 
-      protocol.onError((transferId, error) => {
-        updateQueuedTransfer(transferId, { status: 'error', error });
+      protocol.setErrorHandler((transferId, error) => {
+        const idx = queueRef.current.findIndex((t) => t.id === transferId);
+        if (idx !== -1) {
+          updateQueuedTransfer(transferId, { status: 'error', error });
+        } else {
+          useTransferStore.getState().updateTransfer(transferId, { status: 'error', error });
+        }
       });
 
       protocolsRef.current.set(peerId, protocol);
     },
-    [addReceivedRecording, updateQueuedTransfer]
+    [addReceivedRecording, updateQueuedTransfer, broadcastTransferStatus, selfId]
   );
 
   const removePeer = useCallback((peerId: string) => {
@@ -216,50 +266,84 @@ export function useFileTransfer() {
     if (room && !initializedRef.current) {
       initializedRef.current = true;
 
+      const [sendXfer, onXfer, onXferProgress] = room.makeAction<ArrayBuffer>('xfer');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const [sendTransfer, onTransfer] = room.makeAction<any>('xfer');
-      sendTransferRef.current = sendTransfer;
+      const [sendXferAck, onXferAck] = room.makeAction<any>('xfer-ack');
 
-      // Handle incoming transfer messages
-      onTransfer((data: unknown, peerId: string) => {
+      sendBinaryRef.current = (data, peerId, metadata, onProgress) =>
+        sendXfer(data, peerId, metadata, (percent) => onProgress(percent)).then(() => undefined);
+      sendAckRef.current = (data, peerId) => sendXferAck(data, peerId);
+
+      onXfer((data: ArrayBuffer, peerId: string, metadata?: unknown) => {
         const protocol = protocolsRef.current.get(peerId);
-        protocol?.handleMessage(data);
+        if (!protocol) return;
+        const meta = metadata as TransferMetadata | undefined;
+        if (!meta || !meta.transferId) return;
+        protocol.handleReceivedFile(data, meta);
       });
 
-      // Add existing peers
+      // Trystero fires this per-fragment as the binary streams in. The first
+      // fragment carries the metadata payload; we lazily register receive-side
+      // tracking on first sight so we can broadcast host-side progress.
+      onXferProgress((percent: number, peerId: string, metadata?: unknown) => {
+        const meta = metadata as TransferMetadata | undefined;
+        if (!meta || !meta.transferId) return;
+
+        if (!incomingTransfersRef.current.has(meta.transferId)) {
+          const peerEntry = usePeerStore.getState().peers.find((p) => p.id === peerId);
+          const senderName = peerEntry?.name || `User-${peerId.slice(0, 4)}`;
+          incomingTransfersRef.current.set(meta.transferId, {
+            peerId,
+            senderName,
+            filename: meta.filename,
+            size: meta.size,
+            lastBroadcastTime: 0,
+            lastBroadcastProgress: 0
+          });
+        }
+
+        const protocol = protocolsRef.current.get(peerId);
+        protocol?.handleReceiveProgress(meta.transferId, percent, meta.size);
+      });
+
+      onXferAck((data: unknown, peerId: string) => {
+        if (typeof data !== 'object' || data === null) return;
+        const ack = data as AckPayload;
+        const protocol = protocolsRef.current.get(peerId);
+        protocol?.handleAck(ack);
+      });
+
       const existingPeers = room.getPeers();
       Object.keys(existingPeers).forEach((peerId) => {
         addPeer(peerId);
       });
     }
 
-    // Capture ref values for cleanup
     const protocols = protocolsRef.current;
-
+    const incomingTransfers = incomingTransfersRef.current;
     return () => {
       if (initializedRef.current) {
         protocols.forEach((p) => p.clear());
         protocols.clear();
         queueRef.current = [];
+        incomingTransfers.clear();
         activeCountRef.current = 0;
-        sendTransferRef.current = null;
+        sendBinaryRef.current = null;
+        sendAckRef.current = null;
         initializedRef.current = false;
       }
     };
   }, [room, addPeer]);
 
-  // Watch for peer changes and add/remove protocols
   useEffect(() => {
     if (!room || !initializedRef.current) return;
 
-    // Add new peers
     peers.forEach((peer) => {
       if (!protocolsRef.current.has(peer.id)) {
         addPeer(peer.id);
       }
     });
 
-    // Remove departed peers
     const currentPeerIds = new Set(peers.map((p) => p.id));
     protocolsRef.current.forEach((_, peerId) => {
       if (!currentPeerIds.has(peerId)) {
@@ -285,7 +369,6 @@ export function useFileTransfer() {
 
       updateStoreFromQueue();
 
-      // Broadcast the new transfer to all peers
       broadcastTransferStatus({
         transferId: id,
         senderId: selfId,
@@ -326,7 +409,6 @@ export function useFileTransfer() {
     [peers, enqueue]
   );
 
-  // Send multiple recordings (camera and/or screen) to all peers
   const sendMultipleToAllPeers = useCallback(
     (recordings: Array<{ blob: Blob; type: RecordingType }>) => {
       const ids: string[] = [];
