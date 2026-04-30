@@ -39,7 +39,11 @@ const getFFprobeFilename = (platform, arch) => {
 
 async function getLatestFFmpegRelease() {
   console.log('Fetching latest ffmpeg-static release...');
-  const response = await fetch('https://api.github.com/repos/eugeneware/ffmpeg-static/releases/latest');
+  const headers = { Accept: 'application/vnd.github+json' };
+  if (process.env.GITHUB_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  }
+  const response = await fetch('https://api.github.com/repos/eugeneware/ffmpeg-static/releases/latest', { headers });
   if (!response.ok) {
     throw new Error(`Failed to fetch ffmpeg release info: ${response.status}`);
   }
@@ -122,6 +126,20 @@ async function main() {
   const force = process.argv.includes('--force');
 
   try {
+    if (!force) {
+      const allExist = PLATFORMS.every(({ platform, arch }) => {
+        return (
+          existsSync(join(BINARIES_DIR, getFFmpegFilename(platform, arch))) &&
+          existsSync(join(BINARIES_DIR, getFFprobeFilename(platform, arch)))
+        );
+      });
+      if (allExist) {
+        console.log('All ffmpeg/ffprobe binaries already present; skipping download.');
+        console.log(`  Location: ${BINARIES_DIR}`);
+        return;
+      }
+    }
+
     const ffmpegVersion = await getLatestFFmpegRelease();
     console.log(`FFmpeg version: ${ffmpegVersion}\n`);
 

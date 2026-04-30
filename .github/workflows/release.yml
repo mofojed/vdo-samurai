@@ -102,6 +102,8 @@ jobs:
           key: ffmpeg-${{ runner.os }}-${{ hashFiles('scripts/download-ffmpeg-binaries.js') }}
 
       - name: Install dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm ci
 
       - name: Inject prerelease version
