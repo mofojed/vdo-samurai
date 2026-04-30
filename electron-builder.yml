@@ -93,6 +93,7 @@ linux:
         - x64
   category: Video
   icon: build/icons
+  maintainer: VDO Samurai <noreply@vdosamurai.invalid>
 
 publish:
   provider: github
