@@ -25,7 +25,7 @@ jobs:
       version: ${{ steps.compute.outputs.version }}
       tag: ${{ steps.compute.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
@@ -86,17 +86,17 @@ jobs:
             script: package:linux
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
 
       - name: Cache ffmpeg binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: resources/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ hashFiles('scripts/download-ffmpeg-binaries.js') }}
