@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_recreate:
+        description: 'Delete existing release/tag for this SHA and recreate'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      tag: ${{ steps.compute.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Compute version and tag
+        id: compute
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA=${GITHUB_SHA::7}
+          VERSION="${PKG_VERSION}-main.${SHORT_SHA}"
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Computed tag: ${TAG}"
+
+      - name: Handle existing tag/release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.compute.outputs.tag }}
+          FORCE_RECREATE: ${{ inputs.force_recreate }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$FORCE_RECREATE" = "true" ]; then
+              echo "Release $TAG exists; force_recreate=true → deleting."
+              gh release delete "$TAG" --cleanup-tag --yes
+            else
+              echo "::error::Release $TAG already exists. Re-run with workflow_dispatch and force_recreate=true to clobber."
+              exit 1
+            fi
+          fi
+
+      - name: Create draft pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.compute.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --prerelease \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes "Automated pre-release for ${GITHUB_SHA}"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            script: package:mac
+          - name: Windows
+            os: windows-latest
+            script: package:win
+          - name: Linux
+            os: ubuntu-latest
+            script: package:linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Cache ffmpeg binaries
+        uses: actions/cache@v4
+        with:
+          path: resources/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ hashFiles('scripts/download-ffmpeg-binaries.js') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Inject prerelease version
+        run: npm version --no-git-tag-version ${{ needs.prepare.outputs.version }}
+
+      - name: Build and publish (${{ matrix.name }})
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.os == 'macos-latest' && 'false' || '' }}
+        run: npm run ${{ matrix.script }} -- --config.publish.releaseType=prerelease
+
+  finalize:
+    name: Publish pre-release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Flip release out of draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false --prerelease
