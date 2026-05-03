@@ -263,58 +263,7 @@ test.describe('Room Creation and Join Validation', () => {
     console.log('[E2E] Join session test passed!');
   });
 
-  test('last session is remembered and shows Rejoin Room button', async () => {
-    console.log('[E2E] Launching host instance...');
-    host = await launchApp('host');
-
-    // Handle dialogs
-    host.page.on('dialog', async (dialog) => {
-      try { await dialog.accept(); } catch { /* ignore */ }
-    });
-
-    // Setup profile and create session
-    await setupProfile(host.page, 'Host User', 'Host Full Name');
-    const sessionId = await createSession(host.page);
-    console.log('[E2E] Session created:', sessionId);
-
-    // Leave the session
-    const leaveButton = host.page.locator(selectors.session.leaveButton);
-    await expect(leaveButton).toBeVisible({ timeout: 5000 });
-    await leaveButton.click();
-
-    // Wait for home page
-    await host.page.waitForSelector(selectors.home.title, { timeout: 10000 });
-    console.log('[E2E] Returned to home page');
-
-    // Room code input should be pre-filled with the last session's room code
-    const roomCodeInput = host.page.locator(selectors.home.roomCodeInput);
-    const inputValue = await roomCodeInput.inputValue();
-    expect(inputValue).toBe(sessionId);
-    console.log('[E2E] Room code input pre-filled with last session ID');
-
-    // The join button should show "Rejoin Room" since this was the last session and user was host
-    const rejoinButton = host.page.locator('button:has-text("Rejoin Room")');
-    await expect(rejoinButton).toBeVisible({ timeout: 5000 });
-    await expect(rejoinButton).toBeEnabled();
-    console.log('[E2E] Rejoin Room button is visible and enabled');
-
-    // Change room code to something different - button text should change to "Join Room"
-    await roomCodeInput.fill('different-room-code');
-    await sleep(500); // Wait for React state update
-    const joinButton = host.page.locator('button:has-text("Join Room")');
-    await expect(joinButton).toBeVisible({ timeout: 5000 });
-    console.log('[E2E] Button text changed to "Join Room" with different room code');
-
-    // Change back to original session ID - button should show "Rejoin Room" again
-    await roomCodeInput.fill(sessionId);
-    await sleep(500);
-    await expect(rejoinButton).toBeVisible({ timeout: 5000 });
-    console.log('[E2E] Button text back to "Rejoin Room" with original room code');
-
-    console.log('[E2E] Last session remembered test passed!');
-  });
-
-  test('room code input accepts pasted URLs and extracts room code', async () => {
+  test('room code input accepts pasted URLs and splits room/password into fields', async () => {
     console.log('[E2E] Launching app instance...');
     host = await launchApp('host');
 
@@ -322,28 +271,42 @@ test.describe('Room Creation and Join Validation', () => {
     await setupProfile(host.page, 'Host User', 'Host Full Name');
 
     const roomCodeInput = host.page.locator(selectors.home.roomCodeInput);
+    const passwordInput = host.page.locator(selectors.home.roomPasswordInput);
 
-    // Paste a full URL - should extract room code
+    // Paste a full URL - should split into both fields
     const testUrl = 'https://dsmmcken.github.io/vdo-samurai/?room=test-room&p=abc123';
     await roomCodeInput.fill(testUrl);
+    await sleep(200); // Wait for React state update
 
-    // The parseRoomInput function should extract the room code from URL
-    const extractedValue = await roomCodeInput.inputValue();
-    expect(extractedValue).toBe('test-room?p=abc123');
-    console.log('[E2E] URL pasted and room code extracted:', extractedValue);
+    expect(await roomCodeInput.inputValue()).toBe('test-room');
+    expect(await passwordInput.inputValue()).toBe('abc123');
+    console.log('[E2E] URL pasted and split into room/password fields');
 
-    // Join button should be enabled with the extracted room code
+    // Join button should be enabled with the extracted room
     const joinButton = host.page.locator(selectors.home.joinRoomButton);
     await expect(joinButton).toBeEnabled();
     console.log('[E2E] Join button enabled after URL paste');
 
-    // Clear and enter a plain room code
+    // Pasting a combined "room?p=password" string should also split
     await roomCodeInput.fill('');
+    await passwordInput.fill('');
     await roomCodeInput.fill('simple-room?p=password123');
-    const plainValue = await roomCodeInput.inputValue();
-    expect(plainValue).toBe('simple-room?p=password123');
-    console.log('[E2E] Plain room code entered correctly');
+    await sleep(200);
 
-    console.log('[E2E] URL parsing test passed!');
+    expect(await roomCodeInput.inputValue()).toBe('simple-room');
+    expect(await passwordInput.inputValue()).toBe('password123');
+    console.log('[E2E] Combined room?p=password also splits into fields');
+
+    // A plain room name (no delimiter) stays as-is, password remains empty
+    await roomCodeInput.fill('');
+    await passwordInput.fill('');
+    await roomCodeInput.fill('plain-room');
+    await sleep(200);
+
+    expect(await roomCodeInput.inputValue()).toBe('plain-room');
+    expect(await passwordInput.inputValue()).toBe('');
+    console.log('[E2E] Plain room name stays in room field, password empty');
+
+    console.log('[E2E] URL/combined-code parsing test passed!');
   });
 });

@@ -12,7 +12,7 @@ test.describe('Share Link and Room Code Display', () => {
     }
   });
 
-  test('share link button is visible and shows copied feedback on click', async () => {
+  test('share link splits into icon-copy and room-name-popover actions', async () => {
     console.log('[E2E] Launching host instance...');
     host = await launchApp('host');
 
@@ -29,35 +29,44 @@ test.describe('Share Link and Room Code Display', () => {
     await setupProfile(host.page, 'Host User', 'Host Full Name');
     const sessionId = await createSession(host.page);
     console.log('[E2E] Session created:', sessionId);
+    const [roomId, password] = sessionId.split('?p=');
 
-    // Verify the Share Link button is visible in the title bar
+    // Container button shows the room name
     const shareLinkButton = host.page.locator(selectors.session.shareLinkButton);
     await expect(shareLinkButton).toBeVisible({ timeout: 10000 });
-    console.log('[E2E] Share Link button is visible');
+    await expect(shareLinkButton).toContainText(roomId);
+    console.log('[E2E] Share button shows room name:', roomId);
 
-    // Verify it shows "Share Link" text initially
-    await expect(shareLinkButton).toContainText('Share Link');
-    console.log('[E2E] Share Link button shows correct initial text');
-
-    // Verify data-copied is false initially
-    await expect(shareLinkButton).toHaveAttribute('data-copied', 'false');
-    console.log('[E2E] Share Link data-copied is false initially');
-
-    // Click the Share Link button to copy the link
-    await shareLinkButton.click();
-    console.log('[E2E] Clicked Share Link button');
-
-    // Verify the button text changes to "Copied!" and data-copied becomes true
-    await expect(shareLinkButton).toContainText('Copied!', { timeout: 5000 });
+    // Click the icon (copy) button — should copy the link with password and flip data-copied
+    const copyButton = host.page.locator('[data-testid="share-link-copy-button"]');
+    const nameButton = host.page.locator('[data-testid="share-link-name-button"]');
+    await copyButton.click();
     await expect(shareLinkButton).toHaveAttribute('data-copied', 'true');
-    console.log('[E2E] Share Link shows "Copied!" feedback');
+    await expect(copyButton).toContainText('Copied!', { timeout: 5000 });
+    console.log('[E2E] Icon copy produced "Copied!" feedback');
 
-    // Wait for the feedback to reset (2 seconds timeout in component)
-    await expect(shareLinkButton).toContainText('Share Link', { timeout: 5000 });
-    await expect(shareLinkButton).toHaveAttribute('data-copied', 'false');
-    console.log('[E2E] Share Link reverted to default text after timeout');
+    // Popover should NOT have opened from the icon click
+    await expect(host.page.locator('[data-testid="share-link-popover"]')).toHaveCount(0);
+    console.log('[E2E] Icon click did not open popover');
 
-    console.log('[E2E] Share link button visibility and feedback test passed!');
+    // Wait for the copy feedback to reset
+    await expect(shareLinkButton).toHaveAttribute('data-copied', 'false', { timeout: 5000 });
+    console.log('[E2E] Copy state reset after timeout');
+
+    // Click the room-name half — popover opens with details
+    await nameButton.click();
+    const popover = host.page.locator('[data-testid="share-link-popover"]');
+    await expect(popover).toBeVisible({ timeout: 5000 });
+    await expect(popover.locator('[data-testid="share-link-room-name"]')).toContainText(roomId);
+    await expect(popover.locator('[data-testid="share-link-password"]')).toContainText(password);
+    console.log('[E2E] Room-name click opened popover with room and password');
+
+    // Click outside to close popover
+    await host.page.click('body', { position: { x: 10, y: 200 } });
+    await expect(popover).toHaveCount(0);
+    console.log('[E2E] Popover closed on outside click');
+
+    console.log('[E2E] Share link split test passed!');
   });
 
   test('connection status shows Connected and displays session info in popover', async () => {

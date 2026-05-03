@@ -6,47 +6,53 @@ import { useUserStore } from '../store/userStore';
 import { CherryBlossomButton } from '../components/ui/CherryBlossomButton';
 import { PendingTransferBanner } from '../components/PendingTransferBanner';
 import { usePendingTransfers } from '../hooks/usePendingTransfers';
-import { formatRoomCode } from '../utils/roomCode';
+import { formatRoomCode, parseRoomCode } from '../utils/roomCode';
 import { isBrowser } from '../utils/platform';
 import {
-  getRoomCodeFromUrl,
+  getRoomAndPasswordFromUrl,
   clearRoomFromUrl,
-  parseRoomInput,
   setAutoJoinIntent,
   getAutoJoinIntent,
   clearAutoJoinIntent
 } from '../utils/urlParams';
 
 const DEBUG_ROOM_CODE = formatRoomCode('debug_room', 'debug_password');
-
-const LAST_SESSION_KEY = 'vdo-samurai-last-session';
 const BG_IMAGE_URL = './samurai-bg.jpg';
 
-interface LastSession {
-  roomCode: string;
-  wasHost: boolean;
-}
+/**
+ * Accept input that may be a full share URL or a combined "room?p=password" string,
+ * and split it into separate room/password fields.
+ */
+function splitRoomInput(input: string): { roomId: string; password: string } | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
 
-function getLastSession(): LastSession | null {
-  try {
-    const stored = localStorage.getItem(LAST_SESSION_KEY);
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const url = new URL(trimmed);
+      const room = url.searchParams.get('room');
+      const password = url.searchParams.get('p');
+      if (room) return { roomId: room, password: password ?? '' };
+    } catch {
+      // fall through
+    }
   }
-}
 
-function saveLastSession(roomCode: string, wasHost: boolean) {
-  localStorage.setItem(LAST_SESSION_KEY, JSON.stringify({ roomCode, wasHost }));
+  if (trimmed.includes('?p=')) {
+    const parsed = parseRoomCode(trimmed);
+    return { roomId: parsed.roomId, password: parsed.password };
+  }
+
+  return null;
 }
 
 export function HomePage() {
-  const [roomCode, setRoomCode] = useState('');
-  const [lastSession, setLastSession] = useState<LastSession | null>(null);
+  const [roomId, setRoomId] = useState('');
+  const [roomPassword, setRoomPassword] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [bgLoaded, setBgLoaded] = useState(false);
-  const [urlRoomCode, setUrlRoomCode] = useState<string | null>(null);
+  const [hasAutoJoinIntent, setHasAutoJoinIntent] = useState(false);
   const navigate = useNavigate();
   const { createSession, joinSession } = useWebRTC();
   const { requestStream } = useMediaStream();
@@ -58,25 +64,20 @@ export function HomePage() {
 
   const browserMode = isBrowser();
 
-  // Check URL for room code on mount
+  // Pre-fill from URL (?room=…&p=…) on mount
   useEffect(() => {
-    const roomFromUrl = getRoomCodeFromUrl();
-    if (roomFromUrl) {
-      setUrlRoomCode(roomFromUrl);
-      setRoomCode(roomFromUrl);
-      setAutoJoinIntent(roomFromUrl); // Store intent for auto-join after profile setup
+    const fromUrl = getRoomAndPasswordFromUrl();
+    if (fromUrl) {
+      setRoomId(fromUrl.roomId);
+      setRoomPassword(fromUrl.password ?? '');
+      const combined = fromUrl.password
+        ? formatRoomCode(fromUrl.roomId, fromUrl.password)
+        : fromUrl.roomId;
+      setAutoJoinIntent(combined);
+      setHasAutoJoinIntent(true);
       clearRoomFromUrl();
     }
   }, []);
-
-  useEffect(() => {
-    const stored = getLastSession();
-    setLastSession(stored);
-    // Only populate from last session if no URL room code
-    if (stored?.roomCode && !urlRoomCode) {
-      setRoomCode(stored.roomCode);
-    }
-  }, [urlRoomCode]);
 
   useEffect(() => {
     const img = new Image();
@@ -84,61 +85,53 @@ export function HomePage() {
     img.src = BG_IMAGE_URL;
   }, []);
 
-  // Core join logic extracted for reuse by both form submit and auto-join
   const performJoin = useCallback(
-    async (code: string) => {
-      if (!code.trim() || !profile?.displayName) return;
+    async (room: string, password: string) => {
+      const trimmedRoom = room.trim();
+      if (!trimmedRoom || !profile?.displayName) return;
 
       setIsJoining(true);
       try {
-        const trimmedCode = code.trim();
-        // In browser mode, always join as participant (never as host)
-        const isRejoiningAsHost =
-          !browserMode && lastSession?.roomCode === trimmedCode && lastSession?.wasHost;
+        const trimmedPassword = password.trim();
+        const sessionCode = trimmedPassword
+          ? formatRoomCode(trimmedRoom, trimmedPassword)
+          : trimmedRoom;
 
-        // Request media access first
         await requestStream();
-
-        if (isRejoiningAsHost) {
-          // Rejoin as host - use createSession with the same room code
-          await createSession(profile.displayName, trimmedCode);
-        } else {
-          // Join as participant
-          await joinSession(trimmedCode, profile.displayName);
-        }
-
-        saveLastSession(trimmedCode, isRejoiningAsHost);
-        navigate(`/session/${encodeURIComponent(trimmedCode)}`);
+        await joinSession(sessionCode, profile.displayName);
+        navigate(`/session/${encodeURIComponent(sessionCode)}`);
       } catch (err) {
         console.error('Failed to join session:', err);
       } finally {
         setIsJoining(false);
       }
     },
-    [
-      profile?.displayName,
-      browserMode,
-      lastSession?.roomCode,
-      lastSession?.wasHost,
-      requestStream,
-      createSession,
-      joinSession,
-      navigate
-    ]
+    [profile?.displayName, requestStream, joinSession, navigate]
   );
 
-  // Auto-join when profile is ready and there's a pending auto-join intent
+  // Auto-join when profile is ready and there's a pending auto-join intent (from a shared link).
   useEffect(() => {
     const autoJoinCode = getAutoJoinIntent();
     if (autoJoinCode && profile?.displayName && !isJoining && !isCreating) {
-      clearAutoJoinIntent(); // Clear immediately to prevent loops
-      performJoin(autoJoinCode);
+      clearAutoJoinIntent();
+      const parsed = parseRoomCode(autoJoinCode);
+      performJoin(parsed.roomId, parsed.password);
     }
   }, [profile?.displayName, isJoining, isCreating, performJoin]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
-    await performJoin(roomCode);
+    await performJoin(roomId, roomPassword);
+  };
+
+  const handleRoomChange = (value: string) => {
+    const split = splitRoomInput(value);
+    if (split) {
+      setRoomId(split.roomId);
+      setRoomPassword(split.password);
+    } else {
+      setRoomId(value);
+    }
   };
 
   const handleCreate = async () => {
@@ -146,13 +139,8 @@ export function HomePage() {
 
     setIsCreating(true);
     try {
-      // Request media access first
       await requestStream();
-
-      // Create session - will generate a new ID
       const newSessionId = await createSession(profile.displayName);
-
-      saveLastSession(newSessionId, true);
       navigate(`/session/${encodeURIComponent(newSessionId)}`);
     } catch (err) {
       console.error('Failed to create session:', err);
@@ -168,7 +156,6 @@ export function HomePage() {
     try {
       await requestStream();
       await createSession(profile.displayName, DEBUG_ROOM_CODE);
-      saveLastSession(DEBUG_ROOM_CODE, true);
       navigate(`/session/${encodeURIComponent(DEBUG_ROOM_CODE)}`);
     } catch (err) {
       console.error('Failed to create debug session:', err);
@@ -177,11 +164,10 @@ export function HomePage() {
     }
   };
 
-  // Handle reconnect from pending transfer banner
   const handleReconnect = (sessionCode: string) => {
-    setRoomCode(sessionCode);
-    // The user will need to click "Join Room" to actually connect
-    // This ensures they can see what they're connecting to
+    const parsed = parseRoomCode(sessionCode);
+    setRoomId(parsed.roomId);
+    setRoomPassword(parsed.password);
   };
 
   return (
@@ -196,7 +182,6 @@ export function HomePage() {
           <p className="text-xs text-gray-600 mb-4 text-center">Browser Participant Mode</p>
         )}
 
-        {/* Pending transfer banner (browser only) */}
         {browserMode && hasPendingTransfers && (
           <PendingTransferBanner
             transfers={pendingTransfers}
@@ -206,45 +191,13 @@ export function HomePage() {
           />
         )}
 
-        <form onSubmit={handleJoin} className="w-full">
-          <label htmlFor="room-code" className="block text-sm font-medium text-gray-700 mb-2">
-            Room Code
-          </label>
-          <input
-            id="room-code"
-            type="text"
-            value={roomCode}
-            onChange={(e) => setRoomCode(parseRoomInput(e.target.value))}
-            placeholder="Enter room code or paste link"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
-          />
-          <CherryBlossomButton
-            type="submit"
-            disabled={isJoining || !roomCode.trim()}
-            containerClassName="mt-4"
-            className="w-full px-4 py-2 bg-black text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
-          >
-            {isJoining
-              ? 'Joining...'
-              : lastSession?.roomCode === roomCode.trim() && !browserMode
-                ? 'Rejoin Room'
-                : 'Join Room'}
-          </CherryBlossomButton>
-        </form>
-
-        {/* Only show "Create Room" in Electron mode */}
+        {/* Create Room (Electron only) */}
         {!browserMode && (
           <>
-            <div className="flex items-center w-full my-6">
-              <div className="flex-1 border-t border-gray-300"></div>
-              <span className="px-4 text-gray-500 text-sm">or</span>
-              <div className="flex-1 border-t border-gray-300"></div>
-            </div>
-
             <CherryBlossomButton
               onClick={handleCreate}
-              disabled={isCreating}
-              className="w-full px-4 py-2 bg-white/50 text-black border border-gray-300 rounded-lg font-medium hover:bg-white/70 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              disabled={isCreating || isJoining}
+              className="w-full px-4 py-2 bg-black text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
             >
               {isCreating ? 'Creating...' : 'Create Room'}
             </CherryBlossomButton>
@@ -258,10 +211,60 @@ export function HomePage() {
                 Create Debug Room
               </button>
             )}
+
+            <div className="flex items-center w-full my-6">
+              <div className="flex-1 border-t border-gray-300"></div>
+              <span className="px-4 text-gray-500 text-sm">or</span>
+              <div className="flex-1 border-t border-gray-300"></div>
+            </div>
           </>
         )}
 
-        {/* Browser mode info */}
+        {/* Join Existing Room */}
+        <form onSubmit={handleJoin} className="w-full">
+          <h2 className="text-sm font-semibold text-gray-800 mb-3">
+            {browserMode ? 'Join Room' : 'Join Existing Room'}
+          </h2>
+
+          <label htmlFor="room-code" className="block text-xs font-medium text-gray-700 mb-1">
+            Room
+          </label>
+          <input
+            id="room-code"
+            data-testid="room-id-input"
+            type="text"
+            value={roomId}
+            onChange={(e) => handleRoomChange(e.target.value)}
+            placeholder="Room name or paste link"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
+          />
+
+          <label
+            htmlFor="room-password"
+            className="block text-xs font-medium text-gray-700 mb-1 mt-3"
+          >
+            Password <span className="text-gray-500 font-normal">(optional)</span>
+          </label>
+          <input
+            id="room-password"
+            data-testid="room-password-input"
+            type="text"
+            value={roomPassword}
+            onChange={(e) => setRoomPassword(e.target.value)}
+            placeholder="Leave blank if shared without password"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
+          />
+
+          <CherryBlossomButton
+            type="submit"
+            disabled={isJoining || isCreating || !roomId.trim()}
+            containerClassName="mt-4"
+            className="w-full px-4 py-2 bg-black text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          >
+            {isJoining || hasAutoJoinIntent ? 'Joining...' : 'Join Room'}
+          </CherryBlossomButton>
+        </form>
+
         {browserMode && (
           <p className="mt-6 text-xs text-gray-500 text-center">
             To host a session, download the{' '}

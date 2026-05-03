@@ -7,8 +7,9 @@ export const selectors = {
   // Home Page
   home: {
     roomCodeInput: '#room-code',
+    roomPasswordInput: '#room-password',
     createRoomButton: 'button:has-text("Create Room")',
-    joinRoomButton: 'button:has-text("Join Room"), button:has-text("Rejoin Room")',
+    joinRoomButton: 'button[type="submit"]:has-text("Join Room"), button[type="submit"]:has-text("Joining")',
     title: 'h1:has-text("VDO Samurai")'
   },
 

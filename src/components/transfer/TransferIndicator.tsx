@@ -21,6 +21,7 @@ export function TransferIndicator() {
   const { isHost, sessionId } = useSessionStore();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const prevTransferCountRef = useRef(0);
+  const wasPopoverOpenRef = useRef(false);
   const location = useLocation();
   const isHomePage = location.pathname === '/';
   const isSessionPage = location.pathname.startsWith('/session/');
@@ -33,6 +34,23 @@ export function TransferIndicator() {
     }
     prevTransferCountRef.current = transfers.length;
   }, [transfers.length, isSessionPage]);
+
+  // Auto-dismiss the indicator when the user closes the popover after all transfers complete.
+  // Replaces the old explicit "Dismiss" button.
+  const allCompleteAndExisting =
+    transfers.length > 0 && transfers.every((t) => t.status === 'complete');
+  const isPopoverOpenForAutoDismiss = activePopover === 'transfer';
+  useEffect(() => {
+    if (
+      wasPopoverOpenRef.current &&
+      !isPopoverOpenForAutoDismiss &&
+      allCompleteAndExisting &&
+      !isHost
+    ) {
+      setIndicatorDismissed(true);
+    }
+    wasPopoverOpenRef.current = isPopoverOpenForAutoDismiss;
+  }, [isPopoverOpenForAutoDismiss, allCompleteAndExisting, isHost, setIndicatorDismissed]);
 
   // Show if we've ever had transfers and not dismissed
   // Also show for host when in a session (so they can see the race like participants)
@@ -114,7 +132,7 @@ export function TransferIndicator() {
         )}
       </button>
 
-      <TransferRacePopover anchorRef={buttonRef} onDismiss={() => setIndicatorDismissed(true)} />
+      <TransferRacePopover anchorRef={buttonRef} />
     </>
   );
 }

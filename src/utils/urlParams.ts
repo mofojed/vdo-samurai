@@ -53,9 +53,17 @@ export function parseRoomInput(input: string): string {
  * Build a shareable URL for joining a session
  * @param baseUrl - The base URL of the app (e.g., https://dsmmcken.github.io/vdo-samurai)
  * @param roomCode - The full room code including password (roomId?p=password)
+ * @param options.includePassword - Defaults to true. When false, the resulting URL omits `&p=…`
+ *   so the host can share the room link separately from the password.
  */
-export function buildJoinUrl(baseUrl: string, roomCode: string): string {
+export function buildJoinUrl(
+  baseUrl: string,
+  roomCode: string,
+  options: { includePassword?: boolean } = {}
+): string {
+  const { includePassword = true } = options;
   const delimiterIndex = roomCode.lastIndexOf('?p=');
+
   if (delimiterIndex === -1) {
     return `${baseUrl}/?room=${encodeURIComponent(roomCode)}`;
   }
@@ -63,7 +71,23 @@ export function buildJoinUrl(baseUrl: string, roomCode: string): string {
   const roomId = roomCode.substring(0, delimiterIndex);
   const password = roomCode.substring(delimiterIndex + 3);
 
+  if (!includePassword) {
+    return `${baseUrl}/?room=${encodeURIComponent(roomId)}`;
+  }
+
   return `${baseUrl}/?room=${encodeURIComponent(roomId)}&p=${encodeURIComponent(password)}`;
+}
+
+/**
+ * Extract room id and password as separate values from URL query parameters.
+ * Returns null if no `room` param is present.
+ */
+export function getRoomAndPasswordFromUrl(): { roomId: string; password: string | null } | null {
+  const params = new URLSearchParams(window.location.search);
+  const room = params.get('room');
+  const password = params.get('p');
+  if (!room) return null;
+  return { roomId: room, password: password || null };
 }
 
 /**

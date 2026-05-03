@@ -105,6 +105,20 @@ test.describe('Transfer Indicator Persistence', () => {
   }
 
   /**
+   * Helper to switch to participant role for tests that exercise the participant
+   * TransferIndicator UI. The merged RecordingsMenu replaces TransferIndicator
+   * for hosts, so these tests have to flip role after creating a session.
+   */
+  async function makeParticipant(page: typeof app.page) {
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        useSessionStore?: { getState?: () => { setIsHost?: (h: boolean) => void } };
+      };
+      w.useSessionStore?.getState?.()?.setIsHost?.(false);
+    });
+  }
+
+  /**
    * Helper to navigate to session page
    */
   async function navigateToSession(page: typeof app.page) {
@@ -165,10 +179,11 @@ test.describe('Transfer Indicator Persistence', () => {
     // Indicator should be visible
     await expect(indicator).toBeVisible({ timeout: 5000 });
 
-    // Popover auto-opens when transfers start - close it first to verify button state
-    const closeButton = page.locator('button:has-text("Close")');
-    if (await closeButton.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await closeButton.click();
+    // Popover auto-opens when transfers start - close it (by clicking outside) so the
+    // indicator button isn't obscured by the panel when verifying its progress text.
+    const popover = page.locator('h3:has-text("File transfer")');
+    if (await popover.isVisible({ timeout: 500 }).catch(() => false)) {
+      await page.click('body', { position: { x: 10, y: 200 } });
       await page.waitForTimeout(300);
     }
 
@@ -179,6 +194,7 @@ test.describe('Transfer Indicator Persistence', () => {
   test('indicator persists after transfer completes - does not flash away', async () => {
     const { page } = app;
     await navigateToSession(page);
+    await makeParticipant(page);
 
     const indicator = page.locator('button[aria-label="File transfers"]');
 
@@ -239,6 +255,7 @@ test.describe('Transfer Indicator Persistence', () => {
   test('indicator persists even when transfers array is cleared', async () => {
     const { page } = app;
     await navigateToSession(page);
+    await makeParticipant(page);
 
     const indicator = page.locator('button[aria-label="File transfers"]');
 
@@ -281,9 +298,11 @@ test.describe('Transfer Indicator Persistence', () => {
     expect(stateAfter?.hasHadTransfers).toBe(true);
   });
 
-  test('indicator can be dismissed via popover', async () => {
+  test('indicator auto-dismisses after closing popover when all transfers complete', async () => {
     const { page } = app;
     await navigateToSession(page);
+    // Force participant role so the auto-dismiss path applies (host stays visible by design).
+    await makeParticipant(page);
 
     const indicator = page.locator('button[aria-label="File transfers"]');
 
@@ -308,29 +327,28 @@ test.describe('Transfer Indicator Persistence', () => {
 
     await expect(indicator).toBeVisible({ timeout: 5000 });
 
-    // Click to open popover
-    await indicator.click();
+    // Ensure the popover is open so the auto-dismiss effect can observe an open->closed transition.
+    // The popover auto-opens when transfers go from 0 to >0; if a click had already toggled it
+    // closed, click again to reopen.
+    const popover = page.locator('h3:has-text("File transfer")');
+    if (!(await popover.isVisible({ timeout: 500 }).catch(() => false))) {
+      await indicator.click();
+    }
+    await expect(popover).toBeVisible({ timeout: 5000 });
 
-    // Wait for popover to appear (new UI shows "File transfer" heading)
-    await expect(page.locator('h3:has-text("File transfer")')).toBeVisible();
-
-    // Click dismiss button
-    await page.click('button:has-text("Dismiss")');
-
-    // Wait for animation
+    // Click outside to close the popover
+    await page.click('body', { position: { x: 10, y: 200 } });
     await page.waitForTimeout(500);
 
-    // Verify state - indicatorDismissed should be true
+    // After the popover closes with all transfers complete, the indicator dismissed flag should be set
     const state = await getTransferState(page);
     expect(state?.indicatorDismissed).toBe(true);
-
-    // Note: The indicator may still be visible for hosts in session (isHostInSession)
-    // as the host can always access the race view. The key is that indicatorDismissed is set.
   });
 
   test('popover displays file transfer UI', async () => {
     const { page } = app;
     await navigateToSession(page);
+    await makeParticipant(page);
 
     // Inject transfer with full fields required by TransferRacePopover
     // The popover groups transfers by senderId and shows senderName
@@ -368,8 +386,8 @@ test.describe('Transfer Indicator Persistence', () => {
     // Verify racer row shows sender name (for received transfers, shows the sender)
     await expect(page.locator('text=Ninja Warrior')).toBeVisible();
 
-    // Close popover
-    await page.click('button:has-text("Close")');
+    // Close popover by clicking outside
+    await page.click('body', { position: { x: 10, y: 200 } });
 
     // Wait for close animation
     await page.waitForTimeout(500);

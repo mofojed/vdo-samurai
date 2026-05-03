@@ -4,6 +4,7 @@ import { useTransferStore } from '../../store/transferStore';
 import { useRecordingStore } from '../../store/recordingStore';
 import { useComposite } from '../../hooks/useComposite';
 import { FFmpegService } from '../../utils/ffmpeg';
+import { discardRecordingSession } from '../../utils/discardRecording';
 import { Timeline } from './Timeline';
 import { PreviewPanel } from './PreviewPanel';
 import { TransferQueue } from './TransferQueue';
@@ -24,11 +25,10 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     setPlayheadPosition,
     isPlaying,
     setIsPlaying,
-    totalDuration,
-    reset: resetNLE
+    totalDuration
   } = useNLEStore();
-  const { transfers, receivedRecordings, clearReceivedRecordings } = useTransferStore();
-  const { localBlob, localScreenBlob, reset: resetRecording } = useRecordingStore();
+  const { transfers, receivedRecordings } = useTransferStore();
+  const { localBlob, localScreenBlob } = useRecordingStore();
 
   // Use the composite hook instead of direct service
   const {
@@ -175,14 +175,9 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
   }, []);
 
   const handleDiscard = useCallback(() => {
-    // Reset all stores
-    resetNLE();
-    resetRecording();
-    clearReceivedRecordings();
-
-    // Return to session
+    discardRecordingSession();
     onClose();
-  }, [resetNLE, resetRecording, clearReceivedRecordings, onClose]);
+  }, [onClose]);
 
   // Show export progress overlay
   if (exportStatus === 'loading' || exportStatus === 'processing' || exportStatus === 'error') {

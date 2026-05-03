@@ -11,6 +11,7 @@ import { UserPopover } from '../user/UserPopover';
 import { ShareLink } from '../connection/ShareLink';
 import { ConnectionStatus } from '../connection/ConnectionStatus';
 import { TransferIndicator } from '../transfer/TransferIndicator';
+import { RecordingsMenu } from './RecordingsMenu';
 import { formatRoomCode } from '../../utils/roomCode';
 import { isElectron } from '../../utils/platform';
 
@@ -43,7 +44,7 @@ const useCustomControls = electronPlatform === 'win32' || electronPlatform === '
 
 export function TitleBar() {
   const { profile } = useUserStore();
-  const { sessionId, sessionPassword, isConnected } = useSessionStore();
+  const { sessionId, sessionPassword, isConnected, isHost } = useSessionStore();
 
   // Combine roomId and password for shareable link
   const shareableCode =
@@ -164,9 +165,7 @@ export function TitleBar() {
         {showSessionControls && (
           <>
             <ShareLink sessionId={shareableCode} />
-            <ConnectionStatus />
-            <TransferIndicator />
-            {isRecording && (
+            {!isHost && isRecording && (
               <div
                 data-testid="rec-indicator"
                 className="flex items-center gap-1.5 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-medium"
@@ -179,6 +178,8 @@ export function TitleBar() {
                 <span className="font-mono">{elapsed}</span>
               </div>
             )}
+            <ConnectionStatus />
+            {isHost ? <RecordingsMenu /> : <TransferIndicator />}
             <button
               onClick={handleLeave}
               className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/80 hover:bg-red-500 text-white text-xs font-medium transition-colors cursor-pointer"
