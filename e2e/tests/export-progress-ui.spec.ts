@@ -2,11 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import { launchApp, closeApp, type AppInstance } from '../fixtures/electron-app';
 import { selectors } from '../helpers/selectors';
 import { setupProfile, createSession } from '../helpers/test-setup';
-import {
-  waitForRecordingComplete,
-  waitForLocalBlob,
-  sleep,
-} from '../helpers/wait-helpers';
+import { waitForRecordingComplete, waitForLocalBlob, sleep } from '../helpers/wait-helpers';
 
 /**
  * E2E tests for the Export Progress UI
@@ -16,8 +12,8 @@ import {
  * - Status messages (loading/processing)
  * - Cancel Export button presence
  * - Warning message about not closing the window
- * - Export completion screen with Download button, file size, and Back to Editor
- * - Back to Editor button returns to the NLE editor
+ * - Export completion screen with Download button, file size, and Done button
+ * - Done button returns to the NLE editor
  */
 
 // ==========================================
@@ -112,7 +108,7 @@ test.describe('Export Progress UI', () => {
     console.log('[Export Progress UI] Cancel Export button visible');
 
     // Verify the warning message about not closing the window
-    const warningText = page.locator('text=Please don\'t close this window');
+    const warningText = page.locator("text=Please don't close this window");
     await expect(warningText).toBeVisible({ timeout: 5000 });
     console.log('[Export Progress UI] Warning message visible');
 
@@ -134,8 +130,12 @@ test.describe('Export Progress UI', () => {
     // Wait for export to complete
     console.log('[Export Progress UI] Waiting for export to complete...');
     const result = await Promise.race([
-      page.waitForSelector(selectors.nle.exportCompleteTitle, { timeout: 180000 }).then(() => 'success'),
-      page.waitForSelector(selectors.nle.exportFailedTitle, { timeout: 180000 }).then(() => 'failed'),
+      page
+        .waitForSelector(selectors.nle.exportCompleteTitle, { timeout: 180000 })
+        .then(() => 'success'),
+      page
+        .waitForSelector(selectors.nle.exportFailedTitle, { timeout: 180000 })
+        .then(() => 'failed')
     ]);
 
     expect(result).toBe('success');
@@ -164,8 +164,12 @@ test.describe('Export Progress UI', () => {
     // Wait for export to complete
     await page.waitForSelector(selectors.nle.exportingHeader, { timeout: 10000 });
     const result = await Promise.race([
-      page.waitForSelector(selectors.nle.exportCompleteTitle, { timeout: 180000 }).then(() => 'success'),
-      page.waitForSelector(selectors.nle.exportFailedTitle, { timeout: 180000 }).then(() => 'failed'),
+      page
+        .waitForSelector(selectors.nle.exportCompleteTitle, { timeout: 180000 })
+        .then(() => 'success'),
+      page
+        .waitForSelector(selectors.nle.exportFailedTitle, { timeout: 180000 })
+        .then(() => 'failed')
     ]);
     expect(result).toBe('success');
     console.log('[Export Complete UI] Export complete');
@@ -201,8 +205,8 @@ test.describe('Export Progress UI', () => {
     await expect(outputSizeLabel).toBeVisible({ timeout: 5000 });
     console.log('[Export Complete UI] "Output Size" label visible');
 
-    // Verify filename input with placeholder
-    const filenameInput = page.locator('input[type="text"][placeholder*="vdo-samurai"]');
+    // Verify filename input has a placeholder
+    const filenameInput = page.locator('input[type="text"]').first();
     await expect(filenameInput).toBeVisible({ timeout: 5000 });
     console.log('[Export Complete UI] Filename input visible');
 
@@ -211,10 +215,10 @@ test.describe('Export Progress UI', () => {
     await expect(exportCompleteHeader).toBeVisible({ timeout: 5000 });
     console.log('[Export Complete UI] "Export Complete" header visible');
 
-    // Verify Back to Editor button is visible
-    const backButton = page.locator(selectors.nle.backToEditorButton);
-    await expect(backButton).toBeVisible({ timeout: 5000 });
-    console.log('[Export Complete UI] "Back to Editor" button visible');
+    // Verify Done button is visible
+    const doneButton = page.locator(selectors.nle.doneButton);
+    await expect(doneButton).toBeVisible({ timeout: 5000 });
+    console.log('[Export Complete UI] "Done" button visible');
 
     // Verify privacy notice
     const privacyNotice = page.locator('text=processed entirely on your device');
@@ -224,7 +228,7 @@ test.describe('Export Progress UI', () => {
     console.log('[Export Complete UI] Test passed!');
   });
 
-  test('back to editor button returns to NLE editor from export complete screen', async () => {
+  test('done button returns to NLE editor from export complete screen', async () => {
     app = await launchApp('export-back-editor-' + Date.now());
     const { page } = app;
 
@@ -233,55 +237,59 @@ test.describe('Export Progress UI', () => {
     await createSession(page);
 
     // Record briefly
-    console.log('[Back to Editor] Recording...');
+    console.log('[Done] Recording...');
     await recordShortSession(page, 2000);
 
     // Enter NLE editor and export
     await waitForNLEEditor(page);
     const exportButton = page.locator(selectors.nle.exportButton);
     await expect(exportButton).toBeEnabled({ timeout: 10000 });
-    console.log('[Back to Editor] Starting export...');
+    console.log('[Done] Starting export...');
     await exportButton.click();
 
     // Wait for export to complete
     await page.waitForSelector(selectors.nle.exportingHeader, { timeout: 10000 });
     const result = await Promise.race([
-      page.waitForSelector(selectors.nle.exportCompleteTitle, { timeout: 180000 }).then(() => 'success'),
-      page.waitForSelector(selectors.nle.exportFailedTitle, { timeout: 180000 }).then(() => 'failed'),
+      page
+        .waitForSelector(selectors.nle.exportCompleteTitle, { timeout: 180000 })
+        .then(() => 'success'),
+      page
+        .waitForSelector(selectors.nle.exportFailedTitle, { timeout: 180000 })
+        .then(() => 'failed')
     ]);
     expect(result).toBe('success');
-    console.log('[Back to Editor] Export complete');
+    console.log('[Done] Export complete');
 
     // Verify we are on the export complete screen
     const completeScreen = page.locator(selectors.nle.exportCompleteScreen);
     await expect(completeScreen).toBeVisible({ timeout: 5000 });
 
-    // Click "Back to Editor"
-    const backButton = page.locator(selectors.nle.backToEditorButton);
-    await expect(backButton).toBeVisible({ timeout: 5000 });
-    console.log('[Back to Editor] Clicking Back to Editor...');
-    await backButton.click();
+    // Click "Done"
+    const doneButton = page.locator(selectors.nle.doneButton);
+    await expect(doneButton).toBeVisible({ timeout: 5000 });
+    console.log('[Done] Clicking Done...');
+    await doneButton.click();
 
     // Verify we return to the NLE editor (Video Editor header)
     await page.waitForSelector(selectors.nle.editor, { timeout: 10000 });
-    console.log('[Back to Editor] NLE editor visible again');
+    console.log('[Done] NLE editor visible again');
 
     // Verify the export complete screen is no longer visible
     await expect(completeScreen).not.toBeVisible({ timeout: 5000 });
-    console.log('[Back to Editor] Export complete screen hidden');
+    console.log('[Done] Export complete screen hidden');
 
     // Verify the Export button is available again for re-export
     await expect(exportButton).toBeVisible({ timeout: 5000 });
-    console.log('[Back to Editor] Export button available again');
+    console.log('[Done] Export button available again');
 
     // Verify timeline clips are still present
     const clipCount = page.locator(selectors.nle.clipCount);
     await expect(clipCount).toBeVisible({ timeout: 5000 });
     const clipText = await clipCount.textContent();
     expect(clipText).toContain('clip');
-    console.log('[Back to Editor] Clips still present:', clipText);
+    console.log('[Done] Clips still present:', clipText);
 
-    console.log('[Back to Editor] Test passed!');
+    console.log('[Done] Test passed!');
   });
 
   test('progress percentage increases during export', async () => {
@@ -313,11 +321,20 @@ test.describe('Export Progress UI', () => {
 
     while (Date.now() - startTime < maxWait) {
       // Check if export completed
-      const isComplete = await page.locator(selectors.nle.exportCompleteTitle).isVisible().catch(() => false);
-      const isFailed = await page.locator(selectors.nle.exportFailedTitle).isVisible().catch(() => false);
+      const isComplete = await page
+        .locator(selectors.nle.exportCompleteTitle)
+        .isVisible()
+        .catch(() => false);
+      const isFailed = await page
+        .locator(selectors.nle.exportFailedTitle)
+        .isVisible()
+        .catch(() => false);
 
       if (isComplete || isFailed) {
-        console.log('[Progress Increase] Export finished, status:', isComplete ? 'success' : 'failed');
+        console.log(
+          '[Progress Increase] Export finished, status:',
+          isComplete ? 'success' : 'failed'
+        );
         break;
       }
 

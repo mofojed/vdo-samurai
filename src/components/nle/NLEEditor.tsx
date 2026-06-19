@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useNLEStore, getClipDuration } from '../../store/nleStore';
 import { useTransferStore } from '../../store/transferStore';
 import { useRecordingStore } from '../../store/recordingStore';
+import { useSessionStore } from '../../store/sessionStore';
 import { useComposite } from '../../hooks/useComposite';
 import { FFmpegService } from '../../utils/ffmpeg';
 import { discardRecordingSession } from '../../utils/discardRecording';
@@ -29,6 +30,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
   } = useNLEStore();
   const { transfers, receivedRecordings } = useTransferStore();
   const { localBlob, localScreenBlob } = useRecordingStore();
+  const roomName = useSessionStore((s) => s.sessionId);
 
   // Use the composite hook instead of direct service
   const {
@@ -212,19 +214,10 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
           <h2 className="text-lg font-semibold text-white">Export Complete</h2>
-          <button
-            onClick={() => {
-              resetExport();
-            }}
-            className="text-gray-400 hover:text-white transition-colors"
-            data-testid="back-to-editor-button"
-          >
-            Back to Editor
-          </button>
         </div>
 
         {/* Download content */}
-        <div className="flex-1 flex items-center justify-center p-8">
+        <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-8">
           <div className="max-w-lg w-full">
             <div className="bg-gray-900 rounded-xl p-6">
               <div className="text-center mb-6">
@@ -252,7 +245,8 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
                 outputBlob={outputBlob}
                 outputUrl={outputUrl}
                 outputFormat={outputFormat}
-                onReset={resetExport}
+                roomName={roomName}
+                onDone={resetExport}
               />
             </div>
           </div>

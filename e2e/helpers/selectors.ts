@@ -9,7 +9,8 @@ export const selectors = {
     roomCodeInput: '#room-code',
     roomPasswordInput: '#room-password',
     createRoomButton: 'button:has-text("Create Room")',
-    joinRoomButton: 'button[type="submit"]:has-text("Join Room"), button[type="submit"]:has-text("Joining")',
+    joinRoomButton:
+      'button[type="submit"]:has-text("Join Room"), button[type="submit"]:has-text("Joining")',
     title: 'h1:has-text("VDO Samurai")'
   },
 
@@ -59,7 +60,8 @@ export const selectors = {
     layoutGrid: '[data-testid="layout-grid"]',
     pipCamera: '[data-testid="layout-pip-camera"]',
     gridTileBySelfId: '[data-testid="grid-tile-self"]',
-    mainDisplayRegion: '[role="region"][aria-label*="Main video display"], [role="region"][aria-label*="Grid layout"]'
+    mainDisplayRegion:
+      '[role="region"][aria-label*="Main video display"], [role="region"][aria-label*="Grid layout"]'
   },
 
   // Speed Dial Panel
@@ -100,7 +102,7 @@ export const selectors = {
     exportFailedTitle: 'h3:has-text("Export Failed")',
     exportErrorMessage: '.text-red-400',
     exportRetryButton: 'button:has-text("Try Again")',
-    backToEditorButton: '[data-testid="back-to-editor-button"]',
+    doneButton: '[data-testid="export-done-button"]',
 
     // Export progress UI
     exportProgress: '[data-testid="export-progress"]',

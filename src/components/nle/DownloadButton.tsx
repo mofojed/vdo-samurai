@@ -4,7 +4,8 @@ interface DownloadButtonProps {
   outputBlob: Blob;
   outputUrl: string;
   outputFormat: string;
-  onReset?: () => void;
+  roomName?: string | null;
+  onDone?: () => void;
   showPreview?: boolean;
 }
 
@@ -12,13 +13,21 @@ export function DownloadButton({
   outputBlob,
   outputUrl,
   outputFormat,
-  onReset,
+  roomName,
+  onDone,
   showPreview = true
 }: DownloadButtonProps) {
   const [customFilename, setCustomFilename] = useState('');
 
   const fileSizeMB = (outputBlob.size / (1024 * 1024)).toFixed(1);
-  const defaultFilename = `vdo-samurai-${new Date().toISOString().slice(0, 10)}.${outputFormat}`;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const timeStr = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const safeRoomName = (roomName || 'vdo-samurai')
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const defaultFilename = `${safeRoomName || 'vdo-samurai'}-${dateStr}-${timeStr}.${outputFormat}`;
 
   const handleDownload = useCallback(() => {
     const name = customFilename || defaultFilename;
@@ -60,44 +69,36 @@ export function DownloadButton({
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-3">
-        <button
-          onClick={handleDownload}
-          className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-[--color-primary] hover:bg-[--color-primary]/80 text-white font-semibold transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-            />
-          </svg>
-          Download
-        </button>
-
-        {onReset && (
-          <button
-            onClick={onReset}
-            className="py-3 px-4 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
-            title="Create another export"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-          </button>
-        )}
-      </div>
+      <button
+        onClick={handleDownload}
+        className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-[--color-primary] hover:bg-[--color-primary]/80 text-white font-semibold transition-colors"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+          />
+        </svg>
+        Download
+      </button>
 
       {/* Privacy notice */}
       <p className="text-xs text-gray-500 text-center">
         Your video is processed entirely on your device. No data is uploaded to any server.
       </p>
+
+      {/* Done button */}
+      {onDone && (
+        <button
+          onClick={onDone}
+          className="w-full py-3 px-4 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
+          data-testid="export-done-button"
+        >
+          Done
+        </button>
+      )}
     </div>
   );
 }
